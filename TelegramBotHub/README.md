@@ -27,3 +27,13 @@ Optional environment variables: `PORT`, `HOST` (default `127.0.0.1`), `DASHBOARD
 - Auto-reply rules (contains / exact; global or per-bot)
 - Send to one chat or broadcast to all known chats, live log via SSE
 - State saved in `data/store.json` (mode 600, git-ignored — contains bot tokens)
+
+## Telegram account (API ID) — join the group & add bots
+
+Get an **API ID + API hash** at <https://my.telegram.org> → *API development tools*. Enter them in the dashboard's *Telegram account* card (or set `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` env vars), then log in with your phone number + the code Telegram sends (and your 2-step password if enabled). Then:
+
+- **Join group** — your account joins the invite link (saved in the dashboard).
+- **Join & add all bots** — also adds every configured bot to the group. Your account needs the *Add members* admin right; bots must have a username.
+
+The login session is stored in `data/store.json` (git-ignored, mode 600) — treat it like a password. Never share your API hash or session. Use this only with your own account and groups, and keep activity modest: Telegram can limit or ban accounts that automate aggressively.
+Run `npm install` once before `npm start`.

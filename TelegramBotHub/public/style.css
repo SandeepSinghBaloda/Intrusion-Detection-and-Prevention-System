@@ -21,3 +21,4 @@ ul{list-style:none;padding:0;margin:8px 0}li{display:flex;justify-content:space-
 pre{margin:0;height:240px;overflow:auto;background:#0b0f14;color:#b9f5c8;padding:10px;border-radius:6px;font-size:12px;white-space:pre-wrap}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transition:.3s;pointer-events:none}
 #toast.show{opacity:1}
+[hidden]{display:none!important}

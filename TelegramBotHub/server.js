@@ -6,6 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { createAccount } = require('./account');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -58,6 +59,12 @@ async function tg(token, method, params = {}, signal) {
   }
   return json.result;
 }
+
+const account = createAccount({
+  store, save, log,
+  getBots: () => store.bots,
+  registerChat: c => { store.chats[c.id] = { ...c, lastSeen: new Date().toISOString() }; save(); },
+});
 
 // ---------- bot runtime ----------
 const runtime = new Map(); // botId -> { running, abort, status, error, username }
@@ -210,6 +217,7 @@ async function api(req, res, url) {
   if (a === 'state' && m === 'GET') {
     return send(res, 200, {
       inviteLink: store.inviteLink,
+      account: account.status(),
       bots: store.bots.map(publicBot),
       rules: store.rules,
       chats: Object.values(store.chats),
@@ -221,6 +229,20 @@ async function api(req, res, url) {
     store.inviteLink = String(inviteLink || '').slice(0, 300);
     save();
     return send(res, 200, { ok: true });
+  }
+  if (a === 'account') {
+    try {
+      const body = m === 'POST' ? await readJson(req) : {};
+      if (id === 'creds') account.setCreds(body.apiId, body.apiHash);
+      else if (id === 'login') await account.startLogin(body.phone);
+      else if (id === 'code') account.submitCode(body.code);
+      else if (id === 'password') account.submitPassword(body.password);
+      else if (id === 'logout') await account.logout();
+      else if (id === 'join') return send(res, 200, { group: await account.joinGroup(store.inviteLink) });
+      else if (id === 'add-bots') return send(res, 200, { results: await account.addBots(store.inviteLink) });
+      else return send(res, 404, { error: 'Not found' });
+      return send(res, 200, account.status());
+    } catch (e) { return send(res, 400, { error: e.message }); }
   }
   if (a === 'bots' && !id && m === 'POST') {
     const { name, token } = await readJson(req);
@@ -323,6 +345,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   log('info', 'system', `Dashboard on http://${HOST}:${PORT}${DASH_PASS ? ' (password protected)' : ' (no password set)'}`);
+  account.resume().catch(e => log('error', 'account', e.message));
   for (const bot of store.bots) {
     if (bot.autoStart !== false) startBot(bot).catch(e => log('error', bot.name, `start failed: ${e.message}`));
   }

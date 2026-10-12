@@ -23,6 +23,33 @@
     </form>
   </section>
 
+  <section class="card">
+    <h2>Telegram account (API ID)</h2>
+    <p class="hint" id="accStatus"></p>
+    <form id="credsForm">
+      <input name="apiId" placeholder="API ID (from my.telegram.org)" inputmode="numeric" autocomplete="off">
+      <input name="apiHash" type="password" placeholder="API hash" autocomplete="off">
+      <button>Save credentials</button>
+    </form>
+    <form id="phoneForm" hidden>
+      <input name="phone" placeholder="Phone, e.g. +919876543210" required>
+      <button>Send login code</button>
+    </form>
+    <form id="codeForm" hidden>
+      <input name="code" placeholder="Code from Telegram" required autocomplete="off">
+      <button>Submit code</button>
+    </form>
+    <form id="pwForm" hidden>
+      <input name="password" type="password" placeholder="2-step verification password" required>
+      <button>Submit password</button>
+    </form>
+    <div id="accActions" hidden>
+      <button class="sm" id="joinBtn">Join group</button>
+      <button class="sm ok" id="addBotsBtn">Join &amp; add all bots</button>
+      <button class="sm danger" id="logoutBtn">Log out</button>
+    </div>
+  </section>
+
   <section class="card wide">
     <h2>Bots</h2>
     <table><thead><tr><th>Name</th><th>Username</th><th>Token</th><th>Status</th><th>Msgs</th><th></th></tr></thead>

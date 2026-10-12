@@ -25,7 +25,19 @@ function optionsFor(sel, items, keep) {
   sel.value = keep && items.some(i => i[0] === keep) ? keep : '';
 }
 
+function renderAccount() {
+  const a = state.account || {};
+  const msg = { idle: 'Not logged in', connecting: 'Connecting…', awaiting_code: 'Enter the code Telegram sent to your app/SMS', awaiting_password: 'Enter your 2-step verification password', ready: `Logged in as ${a.user}`, error: 'Error' }[a.state] || a.state;
+  $('#accStatus').textContent = msg + (a.error ? ` — ${a.error}` : '') + (a.group ? ` · Group: ${a.group.title}` : '');
+  $('#credsForm').hidden = a.credsFromEnv || a.state === 'ready';
+  $('#phoneForm').hidden = !a.hasCreds || ['ready', 'awaiting_code', 'awaiting_password', 'connecting'].includes(a.state);
+  $('#codeForm').hidden = a.state !== 'awaiting_code';
+  $('#pwForm').hidden = a.state !== 'awaiting_password';
+  $('#accActions').hidden = a.state !== 'ready';
+}
+
 function render() {
+  renderAccount();
   const inv = $('#invite');
   inv.href = state.inviteLink || '#';
   inv.style.display = state.inviteLink ? '' : 'none';
@@ -89,6 +101,18 @@ $('#send').onsubmit = async e => {
 };
 $('#addRule').onsubmit = async e => { e.preventDefault(); await call('POST', '/api/rules', formData(e.target)); e.target.reset(); refresh(); };
 $('#invForm').onsubmit = async e => { e.preventDefault(); await call('POST', '/api/config', formData(e.target)); e.target.reset(); refresh(); };
+
+const post = (u, b) => act('POST', u, b);
+$('#credsForm').onsubmit = async e => { e.preventDefault(); await post('/api/account/creds', formData(e.target)); e.target.reset(); toast('Saved'); };
+$('#phoneForm').onsubmit = async e => { e.preventDefault(); await post('/api/account/login', formData(e.target)); };
+$('#codeForm').onsubmit = async e => { e.preventDefault(); await post('/api/account/code', formData(e.target)); e.target.reset(); };
+$('#pwForm').onsubmit = async e => { e.preventDefault(); await post('/api/account/password', formData(e.target)); e.target.reset(); };
+$('#logoutBtn').onclick = () => confirm('Log out of the Telegram account?') && post('/api/account/logout');
+$('#joinBtn').onclick = async () => { await call('POST', '/api/account/join'); toast('Joined group'); refresh(); };
+$('#addBotsBtn').onclick = async () => {
+  const { results } = await call('POST', '/api/account/add-bots');
+  toast(results.map(r => `${r.bot}: ${r.ok ? 'ok' : r.error}`).join(' | ') || 'No bots to add'); refresh();
+};
 
 (async () => {
   await refresh();
