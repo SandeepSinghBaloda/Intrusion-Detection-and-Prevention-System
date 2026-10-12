@@ -56,6 +56,9 @@ function render() {
         : btn('Start', 'ok', () => act('POST', `/api/bots/${b.id}/start`)),
       btn('Remove', 'danger', () => confirm(`Remove ${b.name}?`) && act('DELETE', `/api/bots/${b.id}`))))));
 
+  const cs = $('#cmdForm [name=botId]'), prev = cs.value;
+  cs.replaceChildren(...state.bots.map(b => new Option(`${b.name}${b.username ? ' (@' + b.username + ')' : ''}${b.status === 'running' ? '' : ' [stopped]'}`, b.id)));
+  if (state.bots.some(b => b.id === prev)) cs.value = prev;
   const botOpts = state.bots.map(b => [b.id, b.name]);
   document.querySelectorAll('select[name=botId]').forEach(s => optionsFor(s, botOpts, s.value));
   optionsFor($('#send [name=chatId]'), state.chats.map(c => [String(c.id), c.title]), $('#send [name=chatId]').value);
@@ -101,6 +104,19 @@ $('#send').onsubmit = async e => {
 };
 $('#addRule').onsubmit = async e => { e.preventDefault(); await call('POST', '/api/rules', formData(e.target)); e.target.reset(); refresh(); };
 $('#invForm').onsubmit = async e => { e.preventDefault(); await call('POST', '/api/config', formData(e.target)); e.target.reset(); refresh(); };
+
+$('#cmdForm').onsubmit = async e => {
+  e.preventDefault();
+  const { botId, text } = formData(e.target);
+  const out = $('#console');
+  const line = (cls, t) => { out.append(el('div', { className: cls, textContent: t })); out.scrollTop = out.scrollHeight; };
+  line('u', `> ${text}`);
+  e.target.text.value = '';
+  try {
+    const { reply, error } = await call('POST', `/api/bots/${botId}/command`, { text });
+    line(error ? 'e' : 'b', reply ?? '(no reply)');
+  } catch (err) { line('e', err.message); }
+};
 
 const post = (u, b) => act('POST', u, b);
 $('#credsForm').onsubmit = async e => { e.preventDefault(); await post('/api/account/creds', formData(e.target)); e.target.reset(); toast('Saved'); };

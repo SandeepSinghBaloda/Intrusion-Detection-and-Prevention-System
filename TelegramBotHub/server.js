@@ -91,6 +91,52 @@ function matchRule(text, botId) {
   return null;
 }
 
+// Shared command engine: used for Telegram messages and for the web console.
+// ctx.web = true means the command came from the (trusted) dashboard.
+async function runCommand(bot, text, ctx = {}) {
+  const [first, ...rest] = text.trim().split(/\s+/);
+  const cmd = first.split('@')[0].toLowerCase();
+  const arg = rest.join(' ');
+  switch (cmd) {
+    case '/start': return `Hello! I'm ${bot.name}. Send /help to see what I can do.`;
+    case '/help': return 'Commands:\n/ping - check bot\n/whoami - bot info from Telegram\n/id - chat id\n/time - server time\n/echo <text>\n/rules - auto-replies\n/status - all bots\n/chats - known chats' + (ctx.web ? '\n/send <chatId> <text> - post to a chat (web only)\n/broadcast <text> - post to all known chats (web only)' : '');
+    case '/ping': return 'pong 🏓';
+    case '/id': return ctx.chatId ? `Chat ID: ${ctx.chatId}` : 'Web console (no chat). Use /chats to list known chat ids.';
+    case '/time': return new Date().toString();
+    case '/echo': return arg || '(nothing to echo)';
+    case '/whoami': {
+      const me = await tg(bot.token, 'getMe');
+      return `@${me.username} · id ${me.id} · groups allowed: ${me.can_join_groups} · reads all group msgs: ${me.can_read_all_group_messages}`;
+    }
+    case '/rules': {
+      const rs = store.rules.filter(r => !r.botId || r.botId === bot.id);
+      return rs.length ? rs.map(r => `• "${r.trigger}" → ${r.reply}`).join('\n') : 'No auto-replies configured.';
+    }
+    case '/status': return store.bots.map(b => { const p = publicBot(b); return `${p.name} (@${p.username}) - ${p.status}, ${p.handled} msgs`; }).join('\n') || 'No bots.';
+    case '/chats': {
+      const cs = Object.values(store.chats);
+      return cs.length ? cs.map(c => `${c.title} [${c.type}] ${c.id}`).join('\n') : 'No chats yet. Add the bot to the group and send /id there.';
+    }
+    case '/send': {
+      if (!ctx.web) return null;
+      const [chatId, ...t] = rest;
+      if (!chatId || !t.length) return 'Usage: /send <chatId> <text>';
+      await tg(bot.token, 'sendMessage', { chat_id: chatId, text: t.join(' ').slice(0, 4096) });
+      return `Sent to ${chatId}.`;
+    }
+    case '/broadcast': {
+      if (!ctx.web) return null;
+      if (!arg) return 'Usage: /broadcast <text>';
+      let ok = 0; const cs = Object.values(store.chats);
+      for (const c of cs) { try { await tg(bot.token, 'sendMessage', { chat_id: c.id, text: arg.slice(0, 4096) }); ok++; } catch { /* skip */ } }
+      return `Delivered to ${ok}/${cs.length} chats.`;
+    }
+  }
+  const rule = matchRule(text, bot.id);
+  if (rule) return rule.reply;
+  return ctx.web ? 'Unknown command. Type /help.' : null;
+}
+
 async function handleMessage(bot, msg) {
   const chat = msg.chat;
   store.chats[chat.id] = {
@@ -104,20 +150,7 @@ async function handleMessage(bot, msg) {
   const from = msg.from?.username || msg.from?.first_name || 'user';
   log('info', bot.name, `← ${from} in "${store.chats[chat.id].title}": ${text.slice(0, 120)}`);
 
-  const cmd = text.split(/[\s@]/)[0].toLowerCase();
-  let reply = null;
-  if (cmd === '/start') reply = `Hello! I'm ${bot.name}. Send /help to see what I can do.`;
-  else if (cmd === '/help') {
-    reply = 'Commands:\n/start - greet\n/ping - check bot\n/id - show chat id\n/rules - list auto-replies';
-  } else if (cmd === '/ping') reply = 'pong 🏓';
-  else if (cmd === '/id') reply = `Chat ID: ${chat.id}`;
-  else if (cmd === '/rules') {
-    const rs = store.rules.filter(r => !r.botId || r.botId === bot.id);
-    reply = rs.length ? rs.map(r => `• "${r.trigger}"`).join('\n') : 'No auto-replies configured.';
-  } else {
-    const rule = matchRule(text, bot.id);
-    if (rule) reply = rule.reply;
-  }
+  const reply = await runCommand(bot, text, { chatId: chat.id });
   if (reply) {
     await tg(bot.token, 'sendMessage', { chat_id: chat.id, text: reply, reply_to_message_id: msg.message_id, allow_sending_without_reply: true });
     log('info', bot.name, `→ replied in "${store.chats[chat.id].title}"`);
@@ -279,6 +312,13 @@ async function api(req, res, url) {
       bot.autoStart = false; save();
       stopBot(bot);
       return send(res, 200, publicBot(bot));
+    }
+    if (m === 'POST' && action === 'command') {
+      const { text } = await readJson(req);
+      if (!text?.trim()) return send(res, 400, { error: 'text is required' });
+      log('info', bot.name, `web ⇒ ${text.slice(0, 120)}`);
+      try { return send(res, 200, { reply: await runCommand(bot, text, { web: true }) }); }
+      catch (e) { return send(res, 200, { reply: `Error: ${e.message}`, error: true }); }
     }
     if (m === 'POST' && action === 'send') {
       const { chatId, text } = await readJson(req);

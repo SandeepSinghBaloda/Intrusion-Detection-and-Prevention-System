@@ -37,3 +37,7 @@ Get an **API ID + API hash** at <https://my.telegram.org> → *API development t
 
 The login session is stored in `data/store.json` (git-ignored, mode 600) — treat it like a password. Never share your API hash or session. Use this only with your own account and groups, and keep activity modest: Telegram can limit or ban accounts that automate aggressively.
 Run `npm install` once before `npm start`.
+
+## Command console
+
+The dashboard has a **Command console**: pick a bot, type a command (`/ping`, `/whoami`, `/chats`, `/echo hi`, `/send <chatId> <text>`, `/broadcast <text>`, or any text matching an auto-reply rule) and the backend bot runs it and returns the result on the page. The same commands also work inside Telegram, except `/send` and `/broadcast`, which are dashboard-only.

@@ -51,6 +51,17 @@
   </section>
 
   <section class="card wide">
+    <h2>Command console</h2>
+    <div id="console" class="console"></div>
+    <form id="cmdForm" class="row">
+      <select name="botId" required></select>
+      <input name="text" placeholder="Type a command, e.g. /ping, /whoami, /chats, /broadcast Hello" required autocomplete="off">
+      <button>Run</button>
+    </form>
+    <p class="hint">Runs on the selected bot in the backend and shows the result here. Type <code>/help</code> for the list.</p>
+  </section>
+
+  <section class="card wide">
     <h2>Bots</h2>
     <table><thead><tr><th>Name</th><th>Username</th><th>Token</th><th>Status</th><th>Msgs</th><th></th></tr></thead>
     <tbody id="bots"></tbody></table>

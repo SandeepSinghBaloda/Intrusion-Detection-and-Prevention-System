@@ -22,3 +22,6 @@ pre{margin:0;height:240px;overflow:auto;background:#0b0f14;color:#b9f5c8;padding
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transition:.3s;pointer-events:none}
 #toast.show{opacity:1}
 [hidden]{display:none!important}
+.console{height:220px;overflow:auto;background:#0b0f14;border-radius:6px;padding:10px;font:13px/1.5 ui-monospace,monospace;margin-bottom:8px}
+.console .u{color:#7cc4ff}.console .b{color:#b9f5c8;white-space:pre-wrap;margin-bottom:6px}.console .e{color:#ff8a8a}
+.row{flex-direction:row}.row input{flex:1;min-width:0}
