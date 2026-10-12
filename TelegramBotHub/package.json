@@ -1,0 +1,9 @@
+{
+  "name": "telegram-bot-hub",
+  "version": "1.0.0",
+  "description": "Dashboard + backend runner for multiple Telegram bots (zero dependencies)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

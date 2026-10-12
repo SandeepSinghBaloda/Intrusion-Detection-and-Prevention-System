@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telegram Bot Hub</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🤖 Telegram Bot Hub</h1>
+  <a id="invite" target="_blank" rel="noopener">Open Telegram group</a>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Add bot</h2>
+    <p class="hint">Create a bot with <b>@BotFather</b>, paste its token here. Then add the bot to your group/channel (bots cannot join via invite links — a group admin must add them).</p>
+    <form id="addBot">
+      <input name="name" placeholder="Display name (optional)">
+      <input name="token" placeholder="Bot token 123456:ABC-DEF..." required autocomplete="off">
+      <button>Add &amp; start</button>
+    </form>
+  </section>
+
+  <section class="card wide">
+    <h2>Bots</h2>
+    <table><thead><tr><th>Name</th><th>Username</th><th>Token</th><th>Status</th><th>Msgs</th><th></th></tr></thead>
+    <tbody id="bots"></tbody></table>
+    <p id="noBots" class="hint">No bots yet.</p>
+  </section>
+
+  <section class="card">
+    <h2>Send / broadcast</h2>
+    <form id="send">
+      <select name="botId"><option value="">All bots</option></select>
+      <select name="chatId"><option value="">All known chats</option></select>
+      <textarea name="text" rows="3" placeholder="Message…" required></textarea>
+      <button>Send</button>
+    </form>
+    <p class="hint">Chats appear after someone messages a bot in them (try <code>/id</code>) — or paste an id via the chat list.</p>
+  </section>
+
+  <section class="card">
+    <h2>Auto-reply rules</h2>
+    <form id="addRule">
+      <input name="trigger" placeholder="When message contains…" required>
+      <input name="reply" placeholder="Reply with…" required>
+      <select name="match"><option value="contains">contains</option><option value="exact">exact match</option></select>
+      <select name="botId"><option value="">All bots</option></select>
+      <button>Add rule</button>
+    </form>
+    <ul id="rules"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Known chats</h2>
+    <ul id="chats"></ul>
+    <form id="invForm">
+      <input name="inviteLink" placeholder="Group invite link">
+      <button>Save link</button>
+    </form>
+  </section>
+
+  <section class="card wide">
+    <h2>Live log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
