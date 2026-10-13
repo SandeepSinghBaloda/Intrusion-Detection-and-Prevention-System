@@ -1,0 +1,59 @@
+# Telegram Log Monitor - business configuration.
+# Single source of truth for which bots are monitored and how their messages are
+# classified. Change values here; no code changes are needed. Restart to apply.
+
+bots:
+  - username: perimeterlog_bot     # without the leading @
+    label: Perimeter Log
+    backfill_limit: 200            # messages pulled on first run (later runs resume from the last stored id)
+    start_command: /start          # sent once by `python -m app.login` if you have never chatted with the bot
+  - username: TTMlogsBot
+    label: TTM Logs
+    backfill_limit: 200
+    start_command: /start
+
+# Severity classification. Levels are evaluated from highest rank down; the first
+# level whose pattern matches (case-insensitive regex) wins. Unmatched -> `default`.
+severity:
+  default: info
+  levels:
+    - name: critical
+      rank: 4
+      color: "#d93025"
+      patterns: ['\bcritical\b', '\bbreach(ed)?\b', '\bransomware\b', '\bintrusion\b', '\bcompromis(e|ed)\b', '🔴', '🚨']
+    - name: high
+      rank: 3
+      color: "#e8710a"
+      patterns: ['\bhigh\b', '\balert\b', '\battack\b', '\bblocked\b', '\bdenied\b', '\bbrute.?force\b', '\bmalware\b']
+    - name: medium
+      rank: 2
+      color: "#f9ab00"
+      patterns: ['\bwarn(ing)?\b', '\bmedium\b', '\bsuspicious\b', '\bfailed\b', '\bscan(ning)?\b', '🟠', '⚠']
+    - name: low
+      rank: 1
+      color: "#1a73e8"
+      patterns: ['\blow\b', '\bnotice\b']
+    - name: info
+      rank: 0
+      color: "#5f6368"
+      patterns: []
+
+# Fields pulled out of message text. Name -> regex; capture group 1 is used if present,
+# otherwise the whole match. All unique matches are stored and searchable.
+extractors:
+  ip: '\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b'
+  cve: '\bCVE-\d{4}-\d{4,7}\b'
+  port: '\bport[:=\s]+(\d{1,5})\b'
+  domain: '\b((?:[a-z0-9-]+\.)+(?:com|net|org|io|in|gov|edu|co|info|biz|xyz))\b'
+
+media:
+  download: true        # save files/photos the bots send
+  max_size_mb: 5        # larger files are recorded but not downloaded
+
+retention:
+  days: 90              # delete stored messages older than this; 0 = keep forever
+  purge_interval_minutes: 60
+
+ui:
+  page_size: 100
+  refresh_stats_seconds: 30

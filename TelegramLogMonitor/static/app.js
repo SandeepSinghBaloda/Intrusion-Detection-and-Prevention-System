@@ -1,0 +1,307 @@
+// Dashboard for the Telegram Log Monitor API. All bot text is untrusted: render with textContent only.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const KEY_STORE = "tlm.apiKey";
+
+  const state = {
+    config: null,
+    sevColor: {},
+    botLabel: {},
+    filters: { bot: "", severities: new Set(), q: "", outgoing: true },
+    offset: 0,
+    total: 0,
+    pageSize: 100,
+    shown: new Map(), // message id -> <li>
+  };
+
+  // ---------- API helpers ----------
+  function apiKey() {
+    try { return localStorage.getItem(KEY_STORE) || ""; } catch { return ""; }
+  }
+  function setApiKey(k) {
+    try { localStorage.setItem(KEY_STORE, k); } catch { /* storage unavailable */ }
+  }
+  function withKey(url) {
+    const k = apiKey();
+    return k ? url + (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(k) : url;
+  }
+  async function api(path, opts = {}) {
+    const headers = { ...(opts.headers || {}) };
+    const k = apiKey();
+    if (k) headers["X-API-Key"] = k;
+    const res = await fetch(path, { ...opts, headers });
+    if (res.status === 401) {
+      const entered = prompt("API key required (APP_API_KEY from the server's .env):");
+      if (entered) { setApiKey(entered.trim()); return api(path, opts); }
+      throw new Error("Unauthorized");
+    }
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  // ---------- formatting ----------
+  const fmtTime = (iso) => {
+    const d = new Date(iso);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      : d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const ago = (iso) => {
+    if (!iso) return "never";
+    const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  };
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
+  // ---------- rendering ----------
+  function renderMessage(m) {
+    const li = $("msg-tpl").content.firstElementChild.cloneNode(true);
+    li.dataset.id = m.id;
+    if (m.outgoing) li.classList.add("out");
+    const t = li.querySelector("time");
+    t.dateTime = m.date;
+    t.textContent = fmtTime(m.date);
+    t.title = new Date(m.date).toString();
+    li.querySelector(".bot").textContent = (m.outgoing ? "You → " : "") + (state.botLabel[m.bot] || m.bot);
+    const sev = li.querySelector(".sev");
+    if (m.outgoing) sev.remove();
+    else {
+      sev.textContent = m.severity;
+      sev.style.background = state.sevColor[m.severity] || "#5f6368";
+    }
+    li.querySelector(".edited").hidden = !m.edited_at;
+    const text = li.querySelector(".text");
+    text.textContent = m.text || (m.media_name ? "" : "(empty message)");
+    text.title = "Click to expand";
+    text.addEventListener("click", () => li.classList.toggle("open"));
+
+    const extras = li.querySelector(".extras");
+    for (const [name, values] of Object.entries(m.extracted || {})) {
+      for (const v of values) {
+        const tag = el("span", "tag");
+        tag.append(el("b", "", name), v);
+        tag.title = `Filter by ${v}`;
+        tag.addEventListener("click", () => { $("f-q").value = v; applyFilters(); });
+        extras.append(tag);
+      }
+    }
+    if (m.media_name) {
+      if (m.has_file) {
+        const a = el("a", "file", `📎 ${m.media_name}`);
+        a.href = withKey(`/api/messages/${m.id}/file`);
+        a.target = "_blank";
+        a.rel = "noopener";
+        extras.append(a);
+      } else {
+        extras.append(el("span", "file muted", `📎 ${m.media_name} (not downloaded)`));
+      }
+    }
+    return li;
+  }
+
+  function renderCount() {
+    $("count").textContent = `${state.total.toLocaleString()} message(s) · showing ${state.shown.size}`;
+    $("more").hidden = state.shown.size >= state.total;
+  }
+
+  function renderKpis(stats) {
+    const k = $("kpis");
+    k.replaceChildren();
+    const card = (label, value, hint, color) => {
+      const c = el("div", "kpi");
+      const l = el("div", "label");
+      if (color) { const s = el("span", "swatch"); s.style.background = color; l.append(s); }
+      l.append(label);
+      c.append(l, el("div", "value", Number(value).toLocaleString()));
+      if (hint) c.append(el("div", "hint", hint));
+      k.append(c);
+    };
+    card("Stored messages", stats.total, "all bots");
+    card("Last 24 hours", stats.last_24h, "from bots");
+    for (const s of state.config.severities) {
+      card(s.name[0].toUpperCase() + s.name.slice(1), stats.by_severity_24h[s.name] || 0, "last 24h", s.color);
+    }
+    for (const b of state.config.bots) {
+      const info = stats.by_bot[b.username] || { total: 0, last_message_at: null };
+      card(b.label, info.total, `last message ${ago(info.last_message_at)}`);
+    }
+
+    const bars = $("bars");
+    bars.replaceChildren();
+    const max = Math.max(1, ...stats.hourly_24h.map((h) => h.count));
+    for (const h of stats.hourly_24h) {
+      const b = el("div");
+      b.style.height = `${(h.count / max) * 100}%`;
+      b.title = `${new Date(h.hour).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}: ${h.count}`;
+      bars.append(b);
+    }
+    const first = stats.hourly_24h[0];
+    $("activity-range").textContent = first ? `${fmtTime(first.hour)} – now` : "";
+  }
+
+  async function refreshStatus() {
+    try {
+      const s = await api("/api/status");
+      const pill = $("collector-pill");
+      pill.textContent = `${s.mode} · ${s.connected ? "connected" : "disconnected"}`;
+      pill.className = "pill " + (s.connected ? "ok" : "bad");
+      const problems = [s.error, ...Object.entries(s.bots || {})
+        .filter(([, v]) => !v.ok).map(([k, v]) => `@${k}: ${v.error}`)].filter(Boolean);
+      $("error-banner").hidden = !problems.length;
+      $("error-banner").textContent = problems.join(" · ");
+    } catch (e) { console.warn(e); }
+  }
+
+  async function refreshStats() {
+    try { renderKpis(await api("/api/stats")); } catch (e) { console.warn(e); }
+  }
+
+  // ---------- filtering & paging ----------
+  function queryString() {
+    const p = new URLSearchParams();
+    const f = state.filters;
+    if (f.bot) p.append("bot", f.bot);
+    for (const s of f.severities) p.append("severity", s);
+    if (f.q) p.set("q", f.q);
+    if (!f.outgoing) p.set("include_outgoing", "false");
+    p.set("limit", state.pageSize);
+    p.set("offset", state.offset);
+    return p.toString();
+  }
+
+  function matches(m) {
+    const f = state.filters;
+    if (f.bot && m.bot !== f.bot) return false;
+    if (f.severities.size && !f.severities.has(m.severity)) return false;
+    if (!f.outgoing && m.outgoing) return false;
+    if (f.q) {
+      const hay = (m.text + " " + JSON.stringify(m.extracted || {})).toLowerCase();
+      if (!hay.includes(f.q.toLowerCase())) return false;
+    }
+    return true;
+  }
+
+  async function loadPage(reset) {
+    if (reset) {
+      state.offset = 0;
+      state.shown.clear();
+      $("feed").replaceChildren();
+    }
+    const data = await api(`/api/messages?${queryString()}`);
+    state.total = data.total;
+    for (const m of data.items) {
+      if (state.shown.has(m.id)) continue;
+      const li = renderMessage(m);
+      state.shown.set(m.id, li);
+      $("feed").append(li);
+    }
+    state.offset += data.items.length;
+    renderCount();
+  }
+
+  let debounce;
+  function applyFilters() {
+    const f = state.filters;
+    f.bot = $("f-bot").value;
+    f.q = $("f-q").value.trim();
+    f.outgoing = $("f-out").checked;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => loadPage(true).catch(console.error), 250);
+  }
+
+  // ---------- live stream ----------
+  function connectStream() {
+    const live = $("live-pill");
+    const es = new EventSource(withKey("/api/stream"));
+    es.onopen = () => { live.className = "pill ok"; };
+    es.onerror = () => { live.className = "pill bad"; };
+    es.addEventListener("message", (ev) => {
+      if ($("f-pause").checked) return;
+      const m = JSON.parse(ev.data);
+      if (!matches(m)) return;
+      const existing = state.shown.get(m.id);
+      const li = renderMessage(m);
+      if (existing) existing.replaceWith(li); // edited message
+      else {
+        li.classList.add("new");
+        $("feed").prepend(li);
+        state.total += 1;
+        state.offset += 1;
+      }
+      state.shown.set(m.id, li);
+      renderCount();
+    });
+  }
+
+  // ---------- setup ----------
+  async function init() {
+    const cfg = await api("/api/config");
+    state.config = cfg;
+    state.pageSize = cfg.ui.page_size || 100;
+    for (const s of cfg.severities) state.sevColor[s.name] = s.color;
+    for (const b of cfg.bots) state.botLabel[b.username] = b.label;
+    $("bots-sub").textContent = cfg.bots.map((b) => `@${b.username}`).join(" · ");
+
+    for (const b of cfg.bots) {
+      $("f-bot").append(new Option(b.label, b.username));
+      $("s-bot").append(new Option(`${b.label} (@${b.username})`, b.username));
+    }
+    for (const s of cfg.severities) {
+      const chip = el("button", "chip");
+      chip.type = "button";
+      chip.setAttribute("aria-pressed", "false");
+      const sw = el("span", "swatch");
+      sw.style.background = s.color;
+      chip.append(sw, s.name);
+      chip.addEventListener("click", () => {
+        const on = chip.getAttribute("aria-pressed") !== "true";
+        chip.setAttribute("aria-pressed", String(on));
+        on ? state.filters.severities.add(s.name) : state.filters.severities.delete(s.name);
+        applyFilters();
+      });
+      $("f-sev").append(chip);
+    }
+
+    $("f-bot").addEventListener("change", applyFilters);
+    $("f-q").addEventListener("input", applyFilters);
+    $("f-out").addEventListener("change", applyFilters);
+    $("more").addEventListener("click", () => loadPage(false).catch(console.error));
+    $("send-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = $("s-text");
+      const btn = e.submitter;
+      btn.disabled = true;
+      try {
+        await api(`/api/bots/${encodeURIComponent($("s-bot").value)}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: input.value }),
+        });
+        input.value = "";
+      } catch (err) {
+        alert(`Send failed: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    await Promise.all([loadPage(true), refreshStats(), refreshStatus()]);
+    connectStream();
+    const every = (cfg.ui.refresh_stats_seconds || 30) * 1000;
+    setInterval(() => { refreshStats(); refreshStatus(); }, every);
+  }
+
+  init().catch((e) => {
+    $("error-banner").hidden = false;
+    $("error-banner").textContent = `Failed to load: ${e.message}`;
+  });
+})();

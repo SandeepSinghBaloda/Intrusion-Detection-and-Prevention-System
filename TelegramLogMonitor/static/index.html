@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telegram Log Monitor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M8 1l7 7-7 7-7-7z%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◈</span>
+      <div>
+        <h1>Telegram Log Monitor</h1>
+        <p class="sub" id="bots-sub">Loading…</p>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pill" id="collector-pill">collector: …</span>
+      <span class="pill" id="live-pill"><span class="dot"></span>live</span>
+    </div>
+  </header>
+
+  <div class="banner" id="error-banner" hidden></div>
+
+  <main>
+    <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+    <section class="card activity" aria-label="Activity last 24 hours">
+      <div class="card-head"><h2>Activity · last 24h</h2><span class="muted" id="activity-range"></span></div>
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section class="card">
+      <div class="filters">
+        <select id="f-bot" aria-label="Bot"><option value="">All bots</option></select>
+        <div class="chips" id="f-sev" role="group" aria-label="Severity"></div>
+        <input id="f-q" type="search" placeholder="Search text, IP, CVE…" aria-label="Search">
+        <label class="check"><input type="checkbox" id="f-out" checked> show my commands</label>
+        <label class="check"><input type="checkbox" id="f-pause"> pause live</label>
+      </div>
+      <div class="muted count" id="count"></div>
+      <ol class="feed" id="feed"></ol>
+      <button class="more" id="more" hidden>Load more</button>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Send command to bot</h2></div>
+      <form class="send" id="send-form">
+        <select id="s-bot" aria-label="Target bot"></select>
+        <input id="s-text" placeholder="/start, /status, /logs …" autocomplete="off" required maxlength="4096">
+        <button type="submit">Send</button>
+      </form>
+      <p class="muted small">Sent from your own Telegram account. The bot's reply shows up in the feed.</p>
+    </section>
+  </main>
+
+  <template id="msg-tpl">
+    <li class="msg">
+      <div class="meta">
+        <time></time>
+        <span class="bot"></span>
+        <span class="sev"></span>
+        <span class="edited muted" hidden>edited</span>
+      </div>
+      <pre class="text"></pre>
+      <div class="extras"></div>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
