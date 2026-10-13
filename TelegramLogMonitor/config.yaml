@@ -47,8 +47,10 @@ extractors:
   domain: '\b((?:[a-z0-9-]+\.)+(?:com|net|org|io|in|gov|edu|co|info|biz|xyz))\b'
 
 media:
-  download: true        # save files/photos the bots send
-  max_size_mb: 5        # larger files are recorded but not downloaded
+  download: true          # auto-save files/photos as they arrive
+  max_size_mb: 20         # auto-save limit; bigger files are fetched from Telegram when you click Download
+  on_demand_max_mb: 500   # largest file the dashboard is allowed to fetch on click
+  preview_photos: true    # show photo thumbnails in the feed (other file types are always downloads)
 
 retention:
   days: 90              # delete stored messages older than this; 0 = keep forever

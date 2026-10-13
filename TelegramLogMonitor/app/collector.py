@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,14 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", name)[:100] or "file"
 
 
+class FileTooLarge(Exception):
+    pass
+
+
+class FileUnavailable(Exception):
+    """The message or its file no longer exists on Telegram (deleted, expired, not a file)."""
+
+
 class BaseCollector:
     """Shared ingest path used by the real and the demo collector."""
 
@@ -44,18 +53,45 @@ class BaseCollector:
         self.store = store
         self.hub = hub
         self.status: dict = {"mode": "unknown", "connected": False, "error": None, "bots": {}}
+        self._fetch_locks: dict[int, asyncio.Lock] = {}
 
     def ingest(self, *, bot: str, tg_message_id: int, date: str, text: str, outgoing: bool,
                edited_at: str | None = None, media_type: str | None = None,
-               media_name: str | None = None, media_path: str | None = None) -> dict:
+               media_name: str | None = None, media_path: str | None = None,
+               media_size: int | None = None, media_mime: str | None = None) -> dict:
         # Only the bot's own messages are classified; commands we send are stored as 'info'.
         severity = self.rules.default_severity if outgoing else classify(text, self.rules)
         record = self.store.upsert(
             bot=bot, tg_message_id=tg_message_id, date=date, text=text, severity=severity,
             extracted={} if outgoing else extract(text, self.rules), outgoing=outgoing,
-            edited_at=edited_at, media_type=media_type, media_name=media_name, media_path=media_path)
+            edited_at=edited_at, media_type=media_type, media_name=media_name, media_path=media_path,
+            media_size=media_size, media_mime=media_mime)
         self.hub.publish({"type": "message", "data": record})
         return record
+
+    def media_target(self, bot: str, tg_message_id: int, name: str) -> Path:
+        return self.settings.media_dir / f"{_safe_name(bot)}_{tg_message_id}_{_safe_name(name)}"
+
+    async def fetch_media(self, row) -> dict:
+        """Downloads the file of a stored message that was not auto-saved; returns the updated record."""
+        size = row["media_size"]
+        if size is not None and size > self.rules.media_on_demand_max_bytes:
+            raise FileTooLarge(size)
+        lock = self._fetch_locks.setdefault(row["id"], asyncio.Lock())
+        async with lock:  # double clicks / several viewers share one download
+            current = self.store.get(row["id"])
+            if current["media_path"] and Path(current["media_path"]).is_file():
+                return self.store.set_media_path(row["id"], current["media_path"])
+            target = self.media_target(row["bot"], row["tg_message_id"], row["media_name"] or "file")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            await self._download(row, target)
+            record = self.store.set_media_path(row["id"], str(target))
+        self._fetch_locks.pop(row["id"], None)
+        self.hub.publish({"type": "message", "data": record})
+        return record
+
+    async def _download(self, row, target: Path) -> None:
+        raise FileUnavailable("Downloading is not supported by this collector")
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
@@ -147,22 +183,46 @@ class TelegramCollector(BaseCollector):
         except Exception:
             log.exception("Failed to store message %s from @%s", event.message.id, bot.username)
 
+    async def _save(self, m: Message, target: Path) -> None:
+        """Downloads to a .part file first so an interrupted download never looks complete."""
+        partial = target.with_name(target.name + ".part")
+        saved = await m.download_media(file=str(partial))
+        if not saved:
+            raise FileUnavailable("Telegram returned no file")
+        os.replace(saved, target)
+
+    async def _download(self, row, target: Path) -> None:
+        entity = self._entities.get(row["bot"].lower())
+        if entity is None or self.client is None or not self.status["connected"]:
+            raise ConnectionError("Not connected to Telegram")
+        m = await self.client.get_messages(entity, ids=row["tg_message_id"])
+        if m is None or m.media is None or not (m.photo or m.document):
+            raise FileUnavailable("The message or its file no longer exists on Telegram")
+        if m.file and m.file.size and m.file.size > self.rules.media_on_demand_max_bytes:
+            raise FileTooLarge(m.file.size)
+        await self._save(m, target)
+
     async def _ingest_message(self, bot: BotConfig, m: Message) -> None:
         if getattr(m, "action", None) is not None:  # service messages (chat created, etc.)
             return
-        media_type = media_name = media_path = None
+        media_type = media_name = media_path = media_mime = None
+        media_size = None
         if m.media is not None:
             media_type = "photo" if m.photo else "document" if m.document else type(m.media).__name__
             f = m.file
-            media_name = (f.name if f and f.name else None) or f"{media_type}{(f.ext if f else '') or ''}"
-            if (self.rules.media_download and f is not None and f.size is not None
-                    and f.size <= self.rules.media_max_bytes and (m.photo or m.document)):
-                target = self.settings.media_dir / f"{_safe_name(bot.username)}_{m.id}_{_safe_name(media_name)}"
+            if f is not None:
+                media_size, media_mime = f.size, f.mime_type
+            media_name = (f.name if f and f.name else None) or f"{media_type}_{m.id}{(f.ext if f else '') or ''}"
+            if (self.rules.media_download and media_size is not None
+                    and media_size <= self.rules.media_max_bytes and (m.photo or m.document)):
+                target = self.media_target(bot.username, m.id, media_name)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                if not target.exists():
-                    saved = await m.download_media(file=str(target))
-                    target = Path(saved) if saved else None
-                media_path = str(target) if target else None
+                try:
+                    if not target.exists():
+                        await self._save(m, target)
+                    media_path = str(target)
+                except Exception as exc:  # still store the message; the file can be fetched later
+                    log.warning("Auto-download failed for @%s message %s: %s", bot.username, m.id, exc)
 
         self.ingest(
             bot=bot.username,
@@ -174,4 +234,6 @@ class TelegramCollector(BaseCollector):
             media_type=media_type,
             media_name=media_name,
             media_path=media_path,
+            media_size=media_size,
+            media_mime=media_mime,
         )

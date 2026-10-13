@@ -33,6 +33,10 @@
     </section>
 
     <section class="card">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab" id="tab-feed" aria-selected="true">Feed</button>
+        <button type="button" role="tab" class="tab" id="tab-files" aria-selected="false">Files <span class="badge" id="files-badge"></span></button>
+      </div>
       <div class="filters">
         <select id="f-bot" aria-label="Bot"><option value="">All bots</option></select>
         <div class="chips" id="f-sev" role="group" aria-label="Severity"></div>
@@ -42,6 +46,7 @@
       </div>
       <div class="muted count" id="count"></div>
       <ol class="feed" id="feed"></ol>
+      <p class="empty muted" id="empty" hidden>Nothing here yet.</p>
       <button class="more" id="more" hidden>Load more</button>
     </section>
 
@@ -68,6 +73,8 @@
       <div class="extras"></div>
     </li>
   </template>
+
+  <div class="toast" id="toast" role="status" hidden></div>
 
   <script src="app.js"></script>
 </body>

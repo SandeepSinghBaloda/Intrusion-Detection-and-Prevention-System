@@ -75,7 +75,9 @@ class Rules:
     levels: tuple[SeverityLevel, ...]          # sorted highest rank first
     extractors: dict[str, re.Pattern]
     media_download: bool
-    media_max_bytes: int
+    media_max_bytes: int              # auto-download limit
+    media_on_demand_max_bytes: int    # limit for fetching from Telegram when the user clicks Download
+    media_preview_photos: bool
     retention_days: int
     purge_interval_minutes: int
     ui: dict = field(default_factory=dict)
@@ -90,6 +92,11 @@ class Rules:
             "bots": [{"username": b.username, "label": b.label} for b in self.bots],
             "severities": [{"name": l.name, "rank": l.rank, "color": l.color} for l in self.levels],
             "extractors": list(self.extractors),
+            "media": {
+                "auto_download_max_bytes": self.media_max_bytes if self.media_download else 0,
+                "on_demand_max_bytes": self.media_on_demand_max_bytes,
+                "preview_photos": self.media_preview_photos,
+            },
             "ui": self.ui,
         }
 
@@ -135,7 +142,9 @@ def load_rules(path: Path) -> Rules:
         levels=levels,
         extractors={k: re.compile(v, re.IGNORECASE) for k, v in (raw.get("extractors") or {}).items()},
         media_download=bool(media.get("download", True)),
-        media_max_bytes=int(float(media.get("max_size_mb", 5)) * 1024 * 1024),
+        media_max_bytes=int(float(media.get("max_size_mb", 20)) * 1024 * 1024),
+        media_on_demand_max_bytes=int(float(media.get("on_demand_max_mb", 500)) * 1024 * 1024),
+        media_preview_photos=bool(media.get("preview_photos", True)),
         retention_days=int(retention.get("days", 0)),
         purge_interval_minutes=int(retention.get("purge_interval_minutes", 60)),
         ui=dict(raw.get("ui") or {}),

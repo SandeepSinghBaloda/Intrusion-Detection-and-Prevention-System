@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .collector import BaseCollector, TelegramCollector
+from .collector import BaseCollector, FileTooLarge, FileUnavailable, TelegramCollector
 from .config import BASE_DIR, Rules, Settings, load_rules, load_settings
 from .db import Store
 from .demo import DemoCollector
@@ -24,6 +24,10 @@ from .hub import Hub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("monitor")
+
+
+SAFE_INLINE_IMAGES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"}
 
 
 class SendBody(BaseModel):
@@ -92,25 +96,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         since: str | None = None,
         until: str | None = None,
         include_outgoing: bool = True,
+        media_only: bool = False,
         limit: int = Query(default=100, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
     ):
         return store.query(bots=bot or None, severities=severity or None, q=q, since=since,
-                           until=until, include_outgoing=include_outgoing, limit=limit, offset=offset)
+                           until=until, include_outgoing=include_outgoing, media_only=media_only,
+                           limit=limit, offset=offset)
 
     @app.get("/api/stats", dependencies=auth)
     def get_stats():
         return store.stats()
 
-    @app.get("/api/messages/{message_id}/file", dependencies=auth)
-    def get_file(message_id: int):
-        row = store.get(message_id)
-        if row is None or not row["media_path"]:
-            raise HTTPException(404, "No file for this message")
+    def saved_path(row) -> Path | None:
+        if not row["media_path"]:
+            return None
         path = Path(row["media_path"]).resolve()
-        if not path.is_relative_to(settings.media_dir.resolve()) or not path.is_file():
+        if path.is_relative_to(settings.media_dir.resolve()) and path.is_file():
+            return path
+        return None
+
+    async def ensure_saved(message_id: int):
+        """Returns the message row with its file on disk, fetching it from Telegram if needed."""
+        row = store.get(message_id)
+        if row is None or not row["media_type"]:
+            raise HTTPException(404, "This message has no file")
+        if saved_path(row):
+            return row
+        try:
+            await collector.fetch_media(row)
+        except FileTooLarge as exc:
+            limit_mb = rules.media_on_demand_max_bytes // (1024 * 1024)
+            raise HTTPException(413, f"File is {int(exc.args[0]) // (1024 * 1024)} MB; the limit is "
+                                     f"{limit_mb} MB (media.on_demand_max_mb in config.yaml)")
+        except FileUnavailable as exc:
+            raise HTTPException(404, str(exc))
+        except ConnectionError as exc:
+            raise HTTPException(503, str(exc))
+        return store.get(message_id)
+
+    @app.post("/api/messages/{message_id}/fetch", dependencies=auth)
+    async def fetch_file(message_id: int):
+        await ensure_saved(message_id)
+        return store.record(message_id)
+
+    @app.get("/api/messages/{message_id}/file", dependencies=auth)
+    async def get_file(message_id: int, inline: bool = False):
+        row = await ensure_saved(message_id)
+        path = saved_path(row)
+        if path is None:
             raise HTTPException(404, "File not available")
-        return FileResponse(path, filename=row["media_name"] or path.name)
+        name = row["media_name"] or path.name
+        # Only photos may render in the browser; everything else is forced to download so a
+        # bot-supplied HTML/SVG/JS file can never execute in the dashboard's origin.
+        mime = (row["media_mime"] or "").lower()
+        is_image = row["media_type"] == "photo" or mime in SAFE_INLINE_IMAGES
+        if inline and is_image and rules.media_preview_photos:
+            return FileResponse(path, filename=name, content_disposition_type="inline",
+                                media_type=mime if mime in SAFE_INLINE_IMAGES else "image/jpeg",
+                                headers=FILE_HEADERS)
+        return FileResponse(path, filename=name, media_type="application/octet-stream",
+                            headers=FILE_HEADERS)
 
     @app.post("/api/bots/{username}/send", dependencies=auth)
     async def send_to_bot(username: str, body: SendBody):

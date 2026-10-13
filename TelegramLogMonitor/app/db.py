@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS messages (
     media_type    TEXT,
     media_name    TEXT,
     media_path    TEXT,
+    media_size    INTEGER,                     -- bytes, as reported by Telegram
+    media_mime    TEXT,
     received_at   TEXT    NOT NULL,
     UNIQUE (bot, tg_message_id)
 );
@@ -29,8 +31,12 @@ CREATE INDEX IF NOT EXISTS ix_messages_bot_date ON messages (bot, date);
 CREATE INDEX IF NOT EXISTS ix_messages_severity ON messages (severity);
 """
 
+# Columns added after the first release; created on startup for existing databases.
+MIGRATIONS = {"media_size": "INTEGER", "media_mime": "TEXT"}
+
 PUBLIC_COLUMNS = ("id", "bot", "tg_message_id", "date", "edited_at", "outgoing", "text",
-                  "severity", "extracted", "media_type", "media_name", "media_path")
+                  "severity", "extracted", "media_type", "media_name", "media_path",
+                  "media_size", "media_mime")
 
 
 def utcnow() -> str:
@@ -52,6 +58,11 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
+        existing = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
+        for column, kind in MIGRATIONS.items():
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE messages ADD COLUMN {column} {kind}")
+        self._conn.commit()
         self._lock = threading.Lock()
 
     def close(self) -> None:
@@ -60,13 +71,15 @@ class Store:
     def upsert(self, *, bot: str, tg_message_id: int, date: str, text: str, severity: str,
                extracted: dict, outgoing: bool = False, edited_at: str | None = None,
                media_type: str | None = None, media_name: str | None = None,
-               media_path: str | None = None) -> dict:
+               media_path: str | None = None, media_size: int | None = None,
+               media_mime: str | None = None) -> dict:
         with self._lock, self._conn:
             row = self._conn.execute(
                 """
                 INSERT INTO messages (bot, tg_message_id, date, edited_at, outgoing, text, severity,
-                                      extracted, media_type, media_name, media_path, received_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      extracted, media_type, media_name, media_path,
+                                      media_size, media_mime, received_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (bot, tg_message_id) DO UPDATE SET
                     text       = excluded.text,
                     severity   = excluded.severity,
@@ -74,11 +87,14 @@ class Store:
                     edited_at  = COALESCE(excluded.edited_at, messages.edited_at),
                     media_type = COALESCE(excluded.media_type, messages.media_type),
                     media_name = COALESCE(excluded.media_name, messages.media_name),
-                    media_path = COALESCE(excluded.media_path, messages.media_path)
+                    media_path = COALESCE(excluded.media_path, messages.media_path),
+                    media_size = COALESCE(excluded.media_size, messages.media_size),
+                    media_mime = COALESCE(excluded.media_mime, messages.media_mime)
                 RETURNING *
                 """,
                 (bot, tg_message_id, date, edited_at, int(outgoing), text, severity,
-                 json.dumps(extracted), media_type, media_name, media_path, utcnow()),
+                 json.dumps(extracted), media_type, media_name, media_path,
+                 media_size, media_mime, utcnow()),
             ).fetchone()
         return _row(row)
 
@@ -90,9 +106,20 @@ class Store:
     def get(self, message_id: int) -> sqlite3.Row | None:
         return self._conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
 
+    def record(self, message_id: int) -> dict | None:
+        row = self.get(message_id)
+        return _row(row) if row else None
+
+    def set_media_path(self, message_id: int, path: str) -> dict:
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "UPDATE messages SET media_path = ? WHERE id = ? RETURNING *", (path, message_id)).fetchone()
+        return _row(row)
+
     def query(self, *, bots: list[str] | None = None, severities: list[str] | None = None,
               q: str | None = None, since: str | None = None, until: str | None = None,
-              include_outgoing: bool = True, limit: int = 100, offset: int = 0) -> dict:
+              include_outgoing: bool = True, media_only: bool = False,
+              limit: int = 100, offset: int = 0) -> dict:
         where, args = [], []
         if bots:
             where.append(f"bot IN ({','.join('?' * len(bots))})")
@@ -101,9 +128,10 @@ class Store:
             where.append(f"severity IN ({','.join('?' * len(severities))})")
             args += severities
         if q:
-            where.append("(text LIKE ? ESCAPE '\\' OR extracted LIKE ? ESCAPE '\\')")
+            where.append("(text LIKE ? ESCAPE '\\' OR extracted LIKE ? ESCAPE '\\' "
+                         "OR media_name LIKE ? ESCAPE '\\')")
             like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-            args += [like, like]
+            args += [like, like, like]
         if since:
             where.append("date >= ?")
             args.append(since)
@@ -112,6 +140,8 @@ class Store:
             args.append(until)
         if not include_outgoing:
             where.append("outgoing = 0")
+        if media_only:
+            where.append("media_type IS NOT NULL")
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         total = self._conn.execute(f"SELECT COUNT(*) FROM messages {clause}", args).fetchone()[0]
         rows = self._conn.execute(
@@ -135,7 +165,10 @@ class Store:
         for i in range(23, -1, -1):
             h = (now - timedelta(hours=i)).strftime("%Y-%m-%dT%H")
             buckets.append({"hour": h + ":00:00+00:00", "count": hourly.get(h, 0)})
+        files = c.execute("SELECT COUNT(*) n, COUNT(media_path) saved FROM messages "
+                          "WHERE media_type IS NOT NULL AND outgoing = 0").fetchone()
         return {
+            "files": {"total": files["n"], "saved": files["saved"]},
             "total": sum(b["total"] for b in per_bot.values()),
             "last_24h": sum(per_sev.values()),
             "by_bot": per_bot,

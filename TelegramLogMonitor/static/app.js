@@ -7,6 +7,7 @@
     config: null,
     sevColor: {},
     botLabel: {},
+    view: "feed", // "feed" | "files"
     filters: { bot: "", severities: new Set(), q: "", outgoing: true },
     offset: 0,
     total: 0,
@@ -35,7 +36,12 @@
       if (entered) { setApiKey(entered.trim()); return api(path, opts); }
       throw new Error("Unauthorized");
     }
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      const body = await res.text();
+      let detail = body;
+      try { detail = JSON.parse(body).detail || body; } catch { /* not JSON */ }
+      throw new Error(`${res.status} ${detail}`);
+    }
     return res.json();
   }
 
@@ -55,6 +61,31 @@
     if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
     return `${Math.floor(s / 86400)}d ago`;
   };
+  const fmtSize = (bytes) => {
+    if (bytes == null) return "size unknown";
+    const units = ["B", "KB", "MB", "GB"];
+    let i = 0, n = bytes;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n < 10 && i ? 1 : 0)} ${units[i]}`;
+  };
+  const fileIcon = (m) => {
+    const name = (m.media_name || "").toLowerCase();
+    if (m.media_type === "photo" || /\.(png|jpe?g|gif|webp)$/.test(name)) return "🖼️";
+    if (/\.(zip|gz|tgz|rar|7z)$/.test(name)) return "🗜️";
+    if (/\.(pcap|pcapng|cap)$/.test(name)) return "📡";
+    if (/\.(csv|xlsx?)$/.test(name)) return "📊";
+    if (/\.(pdf)$/.test(name)) return "📕";
+    if (/\.(log|txt|json|xml)$/.test(name)) return "📄";
+    return "📎";
+  };
+  let toastTimer;
+  function toast(text) {
+    const t = $("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 5000);
+  }
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -62,7 +93,93 @@
     return n;
   };
 
+  // ---------- files ----------
+  const fileUrl = (m, inline) => withKey(`/api/messages/${m.id}/file${inline ? "?inline=true" : ""}`);
+
+  function triggerDownload(m) {
+    const a = document.createElement("a");
+    a.href = fileUrl(m, false);
+    a.download = m.media_name || "";
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+
+  // Download button: saved files download straight away; others are fetched from Telegram first.
+  function downloadButton(m) {
+    const btn = el("button", "dl");
+    btn.type = "button";
+    const limit = state.config.media.on_demand_max_bytes;
+    if (!m.has_file && m.media_size != null && m.media_size > limit) {
+      btn.textContent = "Too large";
+      btn.disabled = true;
+      btn.title = `Over the ${fmtSize(limit)} on-demand limit (media.on_demand_max_mb in config.yaml)`;
+      return btn;
+    }
+    btn.textContent = m.has_file ? "Download" : "Fetch & download";
+    btn.title = m.has_file ? "Saved on the server" : "Not saved yet - will be pulled from Telegram";
+    btn.addEventListener("click", async () => {
+      if (m.has_file) return triggerDownload(m);
+      btn.disabled = true;
+      btn.classList.add("busy");
+      btn.textContent = "Fetching from Telegram…";
+      try {
+        const updated = await api(`/api/messages/${m.id}/fetch`, { method: "POST" });
+        Object.assign(m, updated);
+        triggerDownload(m);
+        btn.textContent = "Download";
+        btn.title = "Saved on the server";
+      } catch (err) {
+        btn.textContent = "Retry";
+        toast(`Could not get ${m.media_name}: ${err.message.replace(/^\d+ /, "")}`);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("busy");
+      }
+    });
+    return btn;
+  }
+
+  function fileStatus(m) {
+    return `${fmtSize(m.media_size)} · ${m.has_file ? "saved" : "on Telegram"}`;
+  }
+
+  function attachment(m) {
+    const frag = document.createDocumentFragment();
+    const isImage = m.media_type === "photo" || /^image\/(jpeg|png|gif|webp)$/.test(m.media_mime || "");
+    if (isImage && m.has_file && state.config.media.preview_photos) {
+      const img = el("img", "thumb");
+      img.loading = "lazy";
+      img.alt = m.media_name || "photo";
+      img.src = fileUrl(m, true);
+      img.addEventListener("click", () => window.open(fileUrl(m, true), "_blank", "noopener"));
+      frag.append(img);
+    }
+    const box = el("div", "attachment");
+    const info = el("div", "info");
+    info.append(el("div", "name", m.media_name || "file"), el("div", "detail", fileStatus(m)));
+    box.append(el("span", "icon", fileIcon(m)), info, downloadButton(m));
+    frag.append(box);
+    return frag;
+  }
+
+  function renderFileRow(m) {
+    const li = el("li", "msg file-row");
+    li.dataset.id = m.id;
+    const info = el("div");
+    const label = state.botLabel[m.bot] || m.bot;
+    info.append(
+      el("div", "name", m.media_name || "file"),
+      el("div", "detail", `${label} · ${fmtTime(m.date)} · ${fileStatus(m)}`),
+    );
+    if (m.text) info.append(el("div", "caption", m.text));
+    li.append(el("span", "icon", fileIcon(m)), info, downloadButton(m));
+    return li;
+  }
+
   // ---------- rendering ----------
+  const render = (m) => (state.view === "files" ? renderFileRow(m) : renderMessage(m));
+
   function renderMessage(m) {
     const li = $("msg-tpl").content.firstElementChild.cloneNode(true);
     li.dataset.id = m.id;
@@ -94,22 +211,14 @@
         extras.append(tag);
       }
     }
-    if (m.media_name) {
-      if (m.has_file) {
-        const a = el("a", "file", `📎 ${m.media_name}`);
-        a.href = withKey(`/api/messages/${m.id}/file`);
-        a.target = "_blank";
-        a.rel = "noopener";
-        extras.append(a);
-      } else {
-        extras.append(el("span", "file muted", `📎 ${m.media_name} (not downloaded)`));
-      }
-    }
+    if (m.media_type) li.append(attachment(m));
     return li;
   }
 
   function renderCount() {
-    $("count").textContent = `${state.total.toLocaleString()} message(s) · showing ${state.shown.size}`;
+    const noun = state.view === "files" ? "file(s)" : "message(s)";
+    $("count").textContent = `${state.total.toLocaleString()} ${noun} · showing ${state.shown.size}`;
+    $("empty").hidden = state.shown.size > 0;
     $("more").hidden = state.shown.size >= state.total;
   }
 
@@ -127,6 +236,8 @@
     };
     card("Stored messages", stats.total, "all bots");
     card("Last 24 hours", stats.last_24h, "from bots");
+    card("Files", stats.files.total, `${stats.files.saved} saved on server`);
+    $("files-badge").textContent = stats.files.total || "";
     for (const s of state.config.severities) {
       card(s.name[0].toUpperCase() + s.name.slice(1), stats.by_severity_24h[s.name] || 0, "last 24h", s.color);
     }
@@ -173,6 +284,7 @@
     for (const s of f.severities) p.append("severity", s);
     if (f.q) p.set("q", f.q);
     if (!f.outgoing) p.set("include_outgoing", "false");
+    if (state.view === "files") p.set("media_only", "true");
     p.set("limit", state.pageSize);
     p.set("offset", state.offset);
     return p.toString();
@@ -183,8 +295,9 @@
     if (f.bot && m.bot !== f.bot) return false;
     if (f.severities.size && !f.severities.has(m.severity)) return false;
     if (!f.outgoing && m.outgoing) return false;
+    if (state.view === "files" && !m.media_type) return false;
     if (f.q) {
-      const hay = (m.text + " " + JSON.stringify(m.extracted || {})).toLowerCase();
+      const hay = (m.text + " " + (m.media_name || "") + " " + JSON.stringify(m.extracted || {})).toLowerCase();
       if (!hay.includes(f.q.toLowerCase())) return false;
     }
     return true;
@@ -200,7 +313,7 @@
     state.total = data.total;
     for (const m of data.items) {
       if (state.shown.has(m.id)) continue;
-      const li = renderMessage(m);
+      const li = render(m);
       state.shown.set(m.id, li);
       $("feed").append(li);
     }
@@ -229,7 +342,7 @@
       const m = JSON.parse(ev.data);
       if (!matches(m)) return;
       const existing = state.shown.get(m.id);
-      const li = renderMessage(m);
+      const li = render(m);
       if (existing) existing.replaceWith(li); // edited message
       else {
         li.classList.add("new");
@@ -271,6 +384,15 @@
       $("f-sev").append(chip);
     }
 
+    for (const [id, view] of [["tab-feed", "feed"], ["tab-files", "files"]]) {
+      $(id).addEventListener("click", () => {
+        state.view = view;
+        $("tab-feed").setAttribute("aria-selected", String(view === "feed"));
+        $("tab-files").setAttribute("aria-selected", String(view === "files"));
+        $("f-q").placeholder = view === "files" ? "Search file names and captions…" : "Search text, IP, CVE…";
+        loadPage(true).catch(console.error);
+      });
+    }
     $("f-bot").addEventListener("change", applyFilters);
     $("f-q").addEventListener("input", applyFilters);
     $("f-out").addEventListener("change", applyFilters);
