@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 import struct
 import zlib
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,23 @@ def _log_file() -> bytes:
 def _sample() -> str:
     ip = f"{random.randint(11, 223)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
     return random.choice(SAMPLES).format(ip=ip, port=random.choice([22, 80, 443, 3389, 8080]))
+
+
+def _safe(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", name)[:60] or "results"
+
+
+def _search_demo_file(choice: str) -> bytes:
+    """Fake, clearly-placeholder result lines in the chosen format (for DEMO_MODE only)."""
+    rows = []
+    for i in range(1, 26):
+        user, pw = f"user{i}@example.com", f"ExamplePass-{i:03d}"
+        if "url" in choice:
+            rows.append(f"https://portal{i}.example.com:{user}:{pw}")
+        else:
+            rows.append(f"{user}:{pw}")
+    header = f"# DEMO results ({choice}) - placeholder data, example.com only\n"
+    return (header + "\n".join(rows) + "\n").encode()
 
 
 class DemoCollector(BaseCollector):
@@ -130,3 +148,20 @@ class DemoCollector(BaseCollector):
         self._emit(cfg.username, text, outgoing=True)
         await asyncio.sleep(0.3)
         self._emit(cfg.username, f"(demo) received command: {text}")
+
+    async def run_search(self, bot: str, command_text: str, *, button: str | None = None,
+                         suffix: str = "", timeout: int = 60) -> dict:
+        cfg = self.rules.bot(bot)
+        if cfg is None:
+            raise KeyError(bot)
+        self._emit(cfg.username, command_text + (suffix if suffix and not button else ""), outgoing=True)
+        await asyncio.sleep(1.0)
+        choice = button or suffix.strip() or "results"
+        name = f"search_{_safe(choice)}_{datetime.now(timezone.utc).strftime('%H%M%S')}.txt"
+        data = _search_demo_file(choice)
+        target = self.media_target(cfg.username, self._next_id[cfg.username], name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        record = self._emit(cfg.username, f"Results for your search ({choice})", media_type="document",
+                            media_name=name, media_path=str(target), media_size=len(data), media_mime="text/plain")
+        return {"clicked": bool(button), "file": record}

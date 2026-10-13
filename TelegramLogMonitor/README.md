@@ -99,29 +99,44 @@ All endpoints except `/api/health` require `X-API-Key` (or `?key=`) when `APP_AP
 | GET | `/api/stats` | Totals, per-bot counts and last-seen time, 24h severity counts, hourly histogram |
 | GET | `/api/stream` | Server-Sent Events: one `message` event per new or edited message |
 | POST | `/api/bots/{username}/send` | `{"text": "/status"}` sends a message to the bot from your account |
+| POST | `/api/bots/{username}/search` | `{"text": "/search …", "format": "<id>"}` runs the search: sends it, clicks the chosen option button, fetches the file; returns `{clicked, file}` |
 | GET | `/api/messages/{id}/file` | Download a file the bot sent (fetched from Telegram first if not saved yet) |
 | POST | `/api/messages/{id}/fetch` | Pull a not-yet-saved file from Telegram onto the server |
 | GET | `/api/config`, `/api/status`, `/api/health` | Dashboard metadata, collector state, liveness |
 
 ## Search command & string formats
 
-When a command you send from the dashboard starts with one of the configured trigger
-commands (default `/search`, `/lookup`, `/osint`), the **Choose strings format** selector
-appears and an intelligence-sweep animation plays while the command is delivered.
+Some bots answer a `/search` command with a set of inline buttons ("Choose strings format",
+e.g. `url:login:pass` and `login:pass`) and only send the result file once you pick one. The
+dashboard runs that whole exchange for you.
 
-The chosen format's `suffix` is appended to the command text sent to the bot (e.g.
-`/search acme-corp` with the JSON format sends `/search acme-corp --format=json`). Whether
-the bot honours that flag is up to the bot. Everything is configurable under `search:` in
-`config.yaml` — trigger commands, the formats offered, their suffixes and the default — with
-no code changes:
+When a command you send starts with one of the configured trigger commands (default
+`/search`, `/lookup`, `/osint`), the **Choose strings format** selector appears. On send, the
+intelligence-sweep animation plays while the server:
+
+1. sends your command to the bot (e.g. `/search acme-corp`);
+2. waits for the bot's reply and **clicks the button** matching the chosen format;
+3. waits for the file the bot sends back and **fetches it** into the dashboard.
+
+The file then appears in the feed and the **Files** tab, ready to download.
+
+Everything is configurable under `search:` in `config.yaml`, with no code changes. The key
+setting is **`button`** — it must match the bot's inline button text exactly:
 
 ```yaml
 search:
   trigger_commands: ['/search', '/lookup', '/osint']
-  default_format: plain
+  reply_timeout_seconds: 90          # how long to wait for the buttons, then the file
+  default_format: url_login_pass
   formats:
-    - { id: json, label: JSON, suffix: ' --format=json', description: Machine-readable JSON }
+    - { id: url_login_pass, label: 'url:login:pass', button: 'url:login:pass', description: URL, login and password }
+    - { id: login_pass,     label: 'login:pass',     button: 'login:pass',     description: Login and password }
 ```
+
+If your bot takes a text flag instead of buttons, set `suffix: ' --format=json'` on a format
+and leave `button` blank — the suffix is appended to the command and no button is clicked.
+If the bot offers different button labels than configured, the dashboard reports the labels it
+actually saw so you can correct `button`.
 
 ## Security notes
 

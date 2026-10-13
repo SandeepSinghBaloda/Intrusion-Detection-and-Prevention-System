@@ -16,7 +16,14 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .collector import BaseCollector, FileTooLarge, FileUnavailable, TelegramCollector
+from .collector import (
+    BaseCollector,
+    FileTooLarge,
+    FileUnavailable,
+    SearchChoiceUnavailable,
+    SearchNoReply,
+    TelegramCollector,
+)
 from .config import BASE_DIR, Rules, Settings, load_rules, load_settings
 from .db import Store
 from .demo import DemoCollector
@@ -32,6 +39,11 @@ FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": 
 
 class SendBody(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
+
+
+class SearchBody(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)
+    format: str | None = None
 
 
 async def _purge_loop(store: Store, rules: Rules) -> None:
@@ -167,6 +179,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             raise HTTPException(503, "Bot is not connected")
         return {"sent": True}
+
+    @app.post("/api/bots/{username}/search", dependencies=auth)
+    async def search_bot(username: str, body: SearchBody):
+        """Runs a search command end to end: send it, pick the chosen format button the bot
+        offers, and fetch the file it sends back."""
+        if rules.bot(username) is None:
+            raise HTTPException(404, "Bot is not configured")
+        formats = rules.search.get("formats", [])
+        fmt = next((f for f in formats if f["id"] == body.format), None)
+        if fmt is None and formats:  # fall back to the configured default
+            fmt = next((f for f in formats if f["id"] == rules.search.get("default_format")), None)
+        try:
+            result = await collector.run_search(
+                username, body.text,
+                button=(fmt or {}).get("button") or None,
+                suffix=(fmt or {}).get("suffix") or "",
+                timeout=int(rules.search.get("reply_timeout_seconds", 90)))
+        except KeyError:
+            raise HTTPException(503, "Bot is not connected")
+        except ConnectionError as exc:
+            raise HTTPException(503, str(exc))
+        except SearchChoiceUnavailable as exc:
+            raise HTTPException(409, str(exc))
+        except SearchNoReply as exc:
+            raise HTTPException(504, str(exc))
+        return result
 
     @app.get("/api/stream", dependencies=auth)
     async def stream(request: Request):

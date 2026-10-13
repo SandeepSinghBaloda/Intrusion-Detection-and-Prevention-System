@@ -110,6 +110,11 @@ class Store:
         row = self.get(message_id)
         return _row(row) if row else None
 
+    def record_by_tg(self, bot: str, tg_message_id: int) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM messages WHERE bot = ? AND tg_message_id = ?", (bot, tg_message_id)).fetchone()
+        return _row(row) if row else None
+
     def set_media_path(self, message_id: int, path: str) -> dict:
         with self._lock, self._conn:
             row = self._conn.execute(

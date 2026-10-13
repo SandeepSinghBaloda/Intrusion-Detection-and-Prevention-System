@@ -44,6 +44,21 @@ class FileUnavailable(Exception):
     """The message or its file no longer exists on Telegram (deleted, expired, not a file)."""
 
 
+class SearchNoReply(Exception):
+    """The bot did not reply (with option buttons, or at all) within the timeout."""
+
+
+class SearchChoiceUnavailable(Exception):
+    """The bot's reply did not offer a button matching the chosen format."""
+
+    def __init__(self, wanted: str, available: list[str]):
+        self.wanted = wanted
+        self.available = available
+        super().__init__(
+            f"The bot did not offer a '{wanted}' option. It offered: "
+            + (", ".join(available) if available else "no buttons"))
+
+
 class BaseCollector:
     """Shared ingest path used by the real and the demo collector."""
 
@@ -54,6 +69,7 @@ class BaseCollector:
         self.hub = hub
         self.status: dict = {"mode": "unknown", "connected": False, "error": None, "bots": {}}
         self._fetch_locks: dict[int, asyncio.Lock] = {}
+        self._search_locks: dict[str, asyncio.Lock] = {}
 
     def ingest(self, *, bot: str, tg_message_id: int, date: str, text: str, outgoing: bool,
                edited_at: str | None = None, media_type: str | None = None,
@@ -96,6 +112,17 @@ class BaseCollector:
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
     async def send(self, bot: str, text: str) -> None: ...
+
+    async def run_search(self, bot: str, command_text: str, *, button: str | None = None,
+                         suffix: str = "", timeout: int = 60) -> dict:
+        """Runs a search command and returns {"clicked": bool, "file": <record|None>}.
+
+        Sends `command_text` to the bot. If `button` is given, waits for the bot's reply with
+        inline buttons and clicks the one whose text matches `button` (the "Choose strings
+        format" step); otherwise `suffix` is appended to the command. Then waits for the file
+        the bot sends back and returns its record (it is also ingested by the live handler).
+        """
+        raise NotImplementedError
 
 
 class TelegramCollector(BaseCollector):
@@ -162,6 +189,61 @@ class TelegramCollector(BaseCollector):
         if entity is None or self.client is None:
             raise KeyError(bot)
         await self.client.send_message(entity, text)  # echoed back via the NewMessage handler
+
+    async def run_search(self, bot: str, command_text: str, *, button: str | None = None,
+                         suffix: str = "", timeout: int = 60) -> dict:
+        entity = self._entities.get(bot.lower())
+        if entity is None or self.client is None or not self.status["connected"]:
+            raise ConnectionError("Not connected to Telegram")
+        bot_cfg = self.rules.bot(bot)
+        lock = self._search_locks.setdefault(bot.lower(), asyncio.Lock())
+        async with lock:
+            # A conversation lets us wait for the bot's specific replies in order. The global
+            # NewMessage handler also sees these messages, so they are stored either way.
+            async with self.client.conversation(entity, timeout=timeout, exclusive=False) as conv:
+                await conv.send_message(command_text + (suffix if suffix and not button else ""))
+                clicked = False
+                if button:
+                    buttons_msg = await self._wait_for_buttons(conv, button, timeout)
+                    await buttons_msg.click(text=button)  # pick the "Choose strings format" option
+                    clicked = True
+                file_record = await self._wait_for_file(conv, bot_cfg, timeout)
+        return {"clicked": clicked, "file": file_record}
+
+    async def _wait_for_buttons(self, conv, button: str, timeout: int):
+        """Waits for a bot reply carrying inline buttons and checks the chosen one is present."""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise SearchNoReply("The bot did not reply with options in time")
+            try:
+                resp = await conv.get_response(timeout=remaining)
+            except asyncio.TimeoutError:
+                raise SearchNoReply("The bot did not reply with options in time")
+            if not resp.buttons:
+                continue  # intermediate message (e.g. "Searching…"); keep waiting
+            labels = [b.text for row in resp.buttons for b in row]
+            if button in labels:
+                return resp
+            raise SearchChoiceUnavailable(button, labels)
+
+    async def _wait_for_file(self, conv, bot_cfg: BotConfig, timeout: int):
+        """Waits for the bot to send a file after the option is chosen; returns its record."""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return None  # no file arrived; not fatal — the bot may still send it later
+            try:
+                resp = await conv.get_response(timeout=remaining)
+            except asyncio.TimeoutError:
+                return None
+            if resp.media is not None and (resp.photo or resp.document):
+                await self._ingest_message(bot_cfg, resp)  # idempotent with the live handler
+                return self.store.record_by_tg(bot_cfg.username, resp.id)
 
     async def _backfill(self, bot: BotConfig) -> None:
         entity = self._entities[bot.username.lower()]

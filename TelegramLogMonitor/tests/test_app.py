@@ -158,7 +158,26 @@ def test_search_config_exposed(client):
     search = cfg["search"]
     assert "/search" in search["trigger_commands"]
     assert search["default_format"] in {f["id"] for f in search["formats"]}
-    assert {"id", "label", "suffix", "description"} <= set(search["formats"][0])
+    fmt = search["formats"][0]
+    assert {"id", "label", "description"} <= set(fmt)
+    assert "button" not in fmt and "suffix" not in fmt  # internal fields stay server-side
+
+
+def test_search_flow_returns_file(client):
+    h = {"X-API-Key": "secret"}
+    cfg = client.get("/api/config", headers=h).json()
+    fmt = cfg["search"]["formats"][0]["id"]
+    r = client.post("/api/bots/perimeterlog_bot/search", headers=h,
+                    json={"text": "/search acme-corp", "format": fmt})
+    assert r.status_code == 200
+    result = r.json()
+    assert result["file"] and result["file"]["media_type"] == "document"
+    # the returned file is downloadable
+    mid = result["file"]["id"]
+    assert client.get(f"/api/messages/{mid}/file", headers=h).status_code == 200
+    # and it now shows up in the Files listing
+    files = client.get("/api/messages?media_only=true&limit=1000", headers=h).json()["items"]
+    assert any(f["id"] == mid for f in files)
 
 
 def test_bad_default_format_rejected(tmp_path):

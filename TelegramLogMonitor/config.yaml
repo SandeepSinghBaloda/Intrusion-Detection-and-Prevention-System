@@ -58,28 +58,29 @@ retention:
 
 # Search command: when a command you send starts with one of `trigger_commands`,
 # the dashboard shows the "Choose strings format" selector and plays the intelligence
-# sweep animation. The chosen format's `suffix` is appended to the command text that is
-# sent to the bot (leave it blank for the bot's own default). Edit freely; no code changes.
+# sweep animation, then runs the whole flow against the bot:
+#   1. sends your command (e.g. "/search acme-corp")
+#   2. waits for the bot's reply with its option buttons
+#   3. clicks the button whose text equals the chosen format's `button`
+#   4. waits for the file the bot sends back and fetches it into the dashboard
+#
+# `button` must match the inline button text the bot shows EXACTLY. If your bot instead
+# takes a flag, set `suffix` (appended to the command) and leave `button` blank.
+# `reply_timeout_seconds` is how long to wait for the buttons and then the file.
+# Edit freely; no code changes are needed.
 search:
   trigger_commands: ['/search', '/lookup', '/osint']
-  default_format: plain
+  reply_timeout_seconds: 90
+  default_format: url_login_pass
   formats:
-    - id: plain
-      label: Plain text
-      suffix: ''
-      description: The bot's default output
-    - id: json
-      label: JSON
-      suffix: ' --format=json'
-      description: Machine-readable JSON
-    - id: csv
-      label: CSV
-      suffix: ' --format=csv'
-      description: Comma-separated values
-    - id: list
-      label: Line list
-      suffix: ' --format=list'
-      description: One string per line
+    - id: url_login_pass
+      label: 'url:login:pass'
+      button: 'url:login:pass'       # the bot's inline button text for this format
+      description: URL, login and password
+    - id: login_pass
+      label: 'login:pass'
+      button: 'login:pass'
+      description: Login and password
 
 ui:
   page_size: 100

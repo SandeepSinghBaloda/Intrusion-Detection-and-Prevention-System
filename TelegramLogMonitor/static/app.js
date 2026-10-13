@@ -471,26 +471,40 @@
       e.preventDefault();
       const input = $("s-text");
       const btn = e.submitter;
+      const bot = encodeURIComponent($("s-bot").value);
       const search = isSearchCommand(input.value);
-      // For a search command, append the chosen format's suffix to the text sent to the bot.
-      let text = input.value;
-      if (search) {
-        const f = chosenFormat();
-        if (f && f.suffix) text += f.suffix;
-      }
       btn.disabled = true;
-      const send = api(`/api/bots/${encodeURIComponent($("s-bot").value)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
       try {
-        await (search ? runScan(send) : send);
-        input.value = "";
-        toggleSearchOpts();
+        if (search) {
+          // Full search flow: the server sends the command, clicks the chosen option button in
+          // the bot's reply, and fetches the file it sends back. The animation runs until then.
+          const f = chosenFormat();
+          const work = api(`/api/bots/${bot}/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: input.value, format: f ? f.id : null }),
+          });
+          const result = await runScan(work);
+          input.value = "";
+          toggleSearchOpts();
+          if (result && result.file) {
+            toast(`File received: ${result.file.media_name}`);
+            refreshStats();
+            if (state.view === "files") loadPage(true).catch(console.error);
+          } else {
+            toast("Command sent. The file will appear here when the bot sends it.");
+          }
+        } else {
+          await api(`/api/bots/${bot}/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: input.value }),
+          });
+          input.value = "";
+        }
       } catch (err) {
         stopScan();
-        alert(`Send failed: ${err.message}`);
+        toast(`Failed: ${err.message.replace(/^\d+ /, "")}`);
       } finally {
         btn.disabled = false;
       }

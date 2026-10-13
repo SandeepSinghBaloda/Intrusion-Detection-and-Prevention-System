@@ -98,7 +98,14 @@ class Rules:
                 "on_demand_max_bytes": self.media_on_demand_max_bytes,
                 "preview_photos": self.media_preview_photos,
             },
-            "search": self.search,
+            "search": {
+                "trigger_commands": self.search.get("trigger_commands", []),
+                "default_format": self.search.get("default_format", ""),
+                "formats": [
+                    {"id": f["id"], "label": f["label"], "description": f["description"]}
+                    for f in self.search.get("formats", [])
+                ],
+            },
             "ui": self.ui,
         }
 
@@ -144,13 +151,15 @@ def load_rules(path: Path) -> Rules:
         {
             "id": str(f["id"]),
             "label": str(f.get("label") or f["id"]),
-            "suffix": str(f.get("suffix") or ""),
+            "button": str(f.get("button") or ""),   # inline button text to click in the bot's reply
+            "suffix": str(f.get("suffix") or ""),   # or, text appended to the command (no buttons)
             "description": str(f.get("description") or ""),
         }
         for f in raw_search.get("formats") or []
     ]
     search = {
         "trigger_commands": [str(c).lower() for c in raw_search.get("trigger_commands") or ["/search"]],
+        "reply_timeout_seconds": int(raw_search.get("reply_timeout_seconds", 90)),
         "default_format": str(raw_search.get("default_format") or (formats[0]["id"] if formats else "")),
         "formats": formats,
     }
