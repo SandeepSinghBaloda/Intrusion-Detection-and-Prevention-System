@@ -36,7 +36,7 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    load_dotenv(BASE_DIR / ".env")
+    load_dotenv(BASE_DIR / ".env", encoding="utf-8-sig")  # tolerate a BOM from Windows editors
     api_id = os.getenv("TG_API_ID", "").strip()
     return Settings(
         api_id=int(api_id) if api_id else None,
