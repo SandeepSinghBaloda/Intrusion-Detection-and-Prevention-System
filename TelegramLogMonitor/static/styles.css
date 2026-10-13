@@ -111,7 +111,24 @@ input[type=search] { flex: 1; min-width: 180px; }
 }
 .chip[aria-pressed=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .check { display: inline-flex; gap: 5px; align-items: center; color: var(--muted); font-size: 12px; }
-.count { margin: 10px 0 4px; font-size: 12px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
+.count { font-size: 12px; }
+.cleanup { display: flex; align-items: center; gap: 6px; }
+.cleanup select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; }
+button.danger {
+  background: transparent; color: var(--bad); border: 1px solid var(--bad);
+  border-radius: 6px; padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer;
+}
+button.danger:hover { background: var(--bad); color: #fff; }
+button.danger[disabled] { opacity: .5; cursor: not-allowed; }
+/* Per-row delete */
+.row-del {
+  margin-left: auto; background: none; border: 0; color: var(--muted); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+}
+.row-del:hover { color: var(--bad); background: var(--chip-bg); }
+.row-actions { display: flex; align-items: center; gap: 4px; }
+.file-row .row-del { margin-left: 0; }
 
 .feed { list-style: none; margin: 0; padding: 0; }
 .msg { border-top: 1px solid var(--border); padding: 10px 2px; }

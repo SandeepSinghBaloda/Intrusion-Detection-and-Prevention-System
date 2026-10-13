@@ -121,10 +121,10 @@ class Store:
                 "UPDATE messages SET media_path = ? WHERE id = ? RETURNING *", (path, message_id)).fetchone()
         return _row(row)
 
-    def query(self, *, bots: list[str] | None = None, severities: list[str] | None = None,
-              q: str | None = None, since: str | None = None, until: str | None = None,
-              include_outgoing: bool = True, media_only: bool = False,
-              limit: int = 100, offset: int = 0) -> dict:
+    @staticmethod
+    def _filter(*, bots=None, severities=None, q=None, since=None, until=None,
+                include_outgoing=True, media_only=False, older_than_days=None) -> tuple[str, list]:
+        """Builds the shared WHERE clause used by query() and delete_where()."""
         where, args = [], []
         if bots:
             where.append(f"bot IN ({','.join('?' * len(bots))})")
@@ -147,12 +147,44 @@ class Store:
             where.append("outgoing = 0")
         if media_only:
             where.append("media_type IS NOT NULL")
-        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        if older_than_days is not None and older_than_days >= 0:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat(timespec="seconds")
+            where.append("date < ?")
+            args.append(cutoff)
+        return (("WHERE " + " AND ".join(where)) if where else ""), args
+
+    def query(self, *, bots: list[str] | None = None, severities: list[str] | None = None,
+              q: str | None = None, since: str | None = None, until: str | None = None,
+              include_outgoing: bool = True, media_only: bool = False,
+              limit: int = 100, offset: int = 0) -> dict:
+        clause, args = self._filter(bots=bots, severities=severities, q=q, since=since, until=until,
+                                    include_outgoing=include_outgoing, media_only=media_only)
         total = self._conn.execute(f"SELECT COUNT(*) FROM messages {clause}", args).fetchone()[0]
         rows = self._conn.execute(
             f"SELECT * FROM messages {clause} ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             args + [limit, offset]).fetchall()
         return {"total": total, "items": [_row(r) for r in rows]}
+
+    def delete_message(self, message_id: int) -> tuple[str | None, bool]:
+        """Deletes one message; returns (media_path_to_unlink, existed)."""
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT media_path FROM messages WHERE id = ?", (message_id,)).fetchone()
+            if row is None:
+                return None, False
+            self._conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        return row["media_path"], True
+
+    def delete_where(self, **filters) -> tuple[list[int], list[str]]:
+        """Deletes all messages matching the filters; returns (deleted_ids, media_paths_to_unlink)."""
+        clause, args = self._filter(**filters)
+        with self._lock, self._conn:
+            rows = self._conn.execute(f"SELECT id, media_path FROM messages {clause}", args).fetchall()
+            ids = [r["id"] for r in rows]
+            paths = [r["media_path"] for r in rows if r["media_path"]]
+            if ids:
+                self._conn.execute(f"DELETE FROM messages {clause}", args)
+        return ids, paths
 
     def stats(self) -> dict:
         now = datetime.now(timezone.utc)

@@ -46,6 +46,15 @@ class SearchBody(BaseModel):
     format: str | None = None
 
 
+class DeleteBody(BaseModel):
+    bot: list[str] = Field(default_factory=list)
+    severity: list[str] = Field(default_factory=list)
+    q: str | None = None
+    include_outgoing: bool = True
+    media_only: bool = False
+    older_than_days: int | None = None  # None/absent = delete all that match
+
+
 async def _purge_loop(store: Store, rules: Rules) -> None:
     while True:
         for path in store.purge_older_than(rules.retention_days):
@@ -205,6 +214,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except SearchNoReply as exc:
             raise HTTPException(504, str(exc))
         return result
+
+    @app.delete("/api/messages/{message_id}", dependencies=auth)
+    def delete_message(message_id: int):
+        path, existed = store.delete_message(message_id)
+        if not existed:
+            raise HTTPException(404, "No such message")
+        if path:
+            Path(path).unlink(missing_ok=True)
+        hub.publish({"type": "deleted", "data": {"ids": [message_id]}})
+        return {"deleted": 1}
+
+    @app.post("/api/messages/delete", dependencies=auth)
+    def delete_messages(body: DeleteBody):
+        ids, paths = store.delete_where(
+            bots=body.bot or None, severities=body.severity or None, q=body.q,
+            include_outgoing=body.include_outgoing, media_only=body.media_only,
+            older_than_days=body.older_than_days)
+        for p in paths:
+            Path(p).unlink(missing_ok=True)
+        if ids:
+            # Too many ids to stream individually; tell live clients to reload.
+            hub.publish({"type": "reload", "data": {}})
+        return {"deleted": len(ids)}
 
     @app.get("/api/stream", dependencies=auth)
     async def stream(request: Request):

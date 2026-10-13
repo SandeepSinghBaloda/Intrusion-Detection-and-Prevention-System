@@ -173,8 +173,45 @@
       el("div", "detail", `${label} · ${fmtTime(m.date)} · ${fileStatus(m)}`),
     );
     if (m.text) info.append(el("div", "caption", m.text));
-    li.append(el("span", "icon", fileIcon(m)), info, downloadButton(m));
+    const actions = el("div", "row-actions");
+    actions.append(downloadButton(m), deleteButton(m));
+    li.append(el("span", "icon", fileIcon(m)), info, actions);
     return li;
+  }
+
+  // ---------- delete ----------
+  function removeFromView(id) {
+    const li = state.shown.get(id);
+    if (!li) return;
+    li.remove();
+    state.shown.delete(id);
+    state.total = Math.max(0, state.total - 1);
+    renderCount();
+  }
+
+  async function deleteOne(id) {
+    await api(`/api/messages/${id}`, { method: "DELETE" });
+    removeFromView(id);
+    refreshStats();
+  }
+
+  // Small ✕ on each row; confirms nothing (single row), reversible only by the bot re-sending.
+  function deleteButton(m) {
+    const btn = el("button", "row-del", "✕");
+    btn.type = "button";
+    btn.title = state.view === "files" ? "Delete this file" : "Delete this message";
+    btn.setAttribute("aria-label", "Delete");
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      try {
+        await deleteOne(m.id);
+      } catch (err) {
+        toast(`Delete failed: ${err.message.replace(/^\d+ /, "")}`);
+        btn.disabled = false;
+      }
+    });
+    return btn;
   }
 
   // ---------- rendering ----------
@@ -211,6 +248,7 @@
         extras.append(tag);
       }
     }
+    li.querySelector(".meta").append(deleteButton(m));
     if (m.media_type) li.append(attachment(m));
     return li;
   }
@@ -353,6 +391,47 @@
       state.shown.set(m.id, li);
       renderCount();
     });
+    // Another client (or this one) deleted messages.
+    es.addEventListener("deleted", (ev) => {
+      for (const id of JSON.parse(ev.data).ids || []) removeFromView(id);
+    });
+    es.addEventListener("reload", () => {
+      loadPage(true).catch(console.error);
+      refreshStats();
+    });
+  }
+
+  // Bulk delete: removes everything matching the current view's filters, optionally older than N days.
+  async function deleteOld() {
+    const age = $("del-age").value;
+    const f = state.filters;
+    const scope = state.view === "files" ? "file(s)" : "message(s)";
+    const when = age ? `older than ${age} day(s)` : "shown here";
+    if (!confirm(`Delete ${scope} ${when}? This cannot be undone.`)) return;
+    const body = {
+      bot: f.bot ? [f.bot] : [],
+      severity: [...f.severities],
+      q: f.q || null,
+      include_outgoing: f.outgoing,
+      media_only: state.view === "files",
+      older_than_days: age ? Number(age) : null,
+    };
+    const btn = $("del-btn");
+    btn.disabled = true;
+    try {
+      const r = await api("/api/messages/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      toast(`Deleted ${r.deleted} ${scope}.`);
+      await loadPage(true);
+      refreshStats();
+    } catch (err) {
+      toast(`Delete failed: ${err.message.replace(/^\d+ /, "")}`);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // ---------- search command: format selector + intelligence-sweep animation ----------
@@ -466,6 +545,7 @@
     $("f-q").addEventListener("input", applyFilters);
     $("f-out").addEventListener("change", applyFilters);
     $("more").addEventListener("click", () => loadPage(false).catch(console.error));
+    $("del-btn").addEventListener("click", () => deleteOld().catch(console.error));
     $("send-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = $("s-text");

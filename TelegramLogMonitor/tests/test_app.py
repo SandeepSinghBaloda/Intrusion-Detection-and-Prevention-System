@@ -180,6 +180,36 @@ def test_search_flow_returns_file(client):
     assert any(f["id"] == mid for f in files)
 
 
+def test_delete_single_message_and_file(client, tmp_path):
+    h = {"X-API-Key": "secret"}
+    files = client.get("/api/messages?media_only=true&limit=1000", headers=h).json()["items"]
+    target = next(f for f in files if f["has_file"])
+    # the file exists on disk before deletion
+    r = client.get(f"/api/messages/{target['id']}/file", headers=h)
+    assert r.status_code == 200
+    # delete it
+    assert client.delete(f"/api/messages/{target['id']}", headers=h).json() == {"deleted": 1}
+    # it is gone from storage and its file is no longer served
+    assert client.get(f"/api/messages/{target['id']}/file", headers=h).status_code == 404
+    assert client.delete(f"/api/messages/{target['id']}", headers=h).status_code == 404
+
+
+def test_bulk_delete_by_age_and_filters(client):
+    h = {"X-API-Key": "secret"}
+    before = client.get("/api/stats", headers=h).json()["total"]
+    assert before > 0
+    # delete only files older than 90 days -> demo history is within 24h, so nothing matches
+    r = client.post("/api/messages/delete", headers=h, json={"media_only": True, "older_than_days": 90})
+    assert r.json()["deleted"] == 0
+    # delete all files (media_only) -> Files listing becomes empty, feed keeps text messages
+    files_before = client.get("/api/messages?media_only=true&limit=1000", headers=h).json()["total"]
+    assert files_before > 0
+    r = client.post("/api/messages/delete", headers=h, json={"media_only": True})
+    assert r.json()["deleted"] == files_before
+    assert client.get("/api/messages?media_only=true", headers=h).json()["total"] == 0
+    assert client.get("/api/messages", headers=h).json()["total"] > 0  # text messages remain
+
+
 def test_bad_default_format_rejected(tmp_path):
     import yaml
     from app.config import load_rules, BASE_DIR

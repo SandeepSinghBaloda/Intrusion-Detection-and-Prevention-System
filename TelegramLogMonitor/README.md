@@ -102,7 +102,23 @@ All endpoints except `/api/health` require `X-API-Key` (or `?key=`) when `APP_AP
 | POST | `/api/bots/{username}/search` | `{"text": "/search …", "format": "<id>"}` runs the search: sends it, clicks the chosen option button, fetches the file; returns `{clicked, file}` |
 | GET | `/api/messages/{id}/file` | Download a file the bot sent (fetched from Telegram first if not saved yet) |
 | POST | `/api/messages/{id}/fetch` | Pull a not-yet-saved file from Telegram onto the server |
+| DELETE | `/api/messages/{id}` | Delete one message (and its downloaded file) |
+| POST | `/api/messages/delete` | Bulk delete by filter: `{bot, severity, q, media_only, older_than_days}` — returns `{deleted}` |
 | GET | `/api/config`, `/api/status`, `/api/health` | Dashboard metadata, collector state, liveness |
+
+## Removing messages and files
+
+Besides the automatic `retention.days` cleanup, you can delete on demand from the dashboard:
+
+* **One at a time** — each row in the **Feed** and **Files** tabs has a ✕ button that deletes that
+  message (and its downloaded file).
+* **In bulk** — the **Remove … [Delete]** control deletes everything matching the current view
+  and filters. Pick *all shown* or *older than 1 / 7 / 30 / 90 days*. In the **Files** tab it
+  deletes only file messages; in the **Feed** tab it deletes all matching messages. The bot
+  filter, severity chips and search box narrow what is removed.
+
+Deletes are permanent (the only way back is the bot re-sending the message) and apply to every
+connected dashboard immediately.
 
 ## Search command & string formats
 

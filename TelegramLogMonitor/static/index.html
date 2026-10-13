@@ -60,7 +60,20 @@
         <label class="check"><input type="checkbox" id="f-out" checked> show my commands</label>
         <label class="check"><input type="checkbox" id="f-pause"> pause live</label>
       </div>
-      <div class="muted count" id="count"></div>
+      <div class="toolbar">
+        <div class="muted count" id="count"></div>
+        <div class="cleanup">
+          <label class="muted small" for="del-age">Remove</label>
+          <select id="del-age" aria-label="Remove older than">
+            <option value="">all shown</option>
+            <option value="1">older than 1 day</option>
+            <option value="7">older than 7 days</option>
+            <option value="30">older than 30 days</option>
+            <option value="90">older than 90 days</option>
+          </select>
+          <button type="button" class="danger" id="del-btn">Delete</button>
+        </div>
+      </div>
       <ol class="feed" id="feed"></ol>
       <p class="empty muted" id="empty" hidden>Nothing here yet.</p>
       <button class="more" id="more" hidden>Load more</button>
