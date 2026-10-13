@@ -1,4 +1,4 @@
-# Telegram Log Monitor
+# Darkweb OSINT Tool
 
 Collects messages from third-party Telegram bots (**@perimeterlog_bot**, **@TTMlogsBot**) in the
 background, stores them, classifies severity, extracts indicators (IPs, ports, CVEs, domains) and
@@ -102,6 +102,26 @@ All endpoints except `/api/health` require `X-API-Key` (or `?key=`) when `APP_AP
 | GET | `/api/messages/{id}/file` | Download a file the bot sent (fetched from Telegram first if not saved yet) |
 | POST | `/api/messages/{id}/fetch` | Pull a not-yet-saved file from Telegram onto the server |
 | GET | `/api/config`, `/api/status`, `/api/health` | Dashboard metadata, collector state, liveness |
+
+## Search command & string formats
+
+When a command you send from the dashboard starts with one of the configured trigger
+commands (default `/search`, `/lookup`, `/osint`), the **Choose strings format** selector
+appears and an intelligence-sweep animation plays while the command is delivered.
+
+The chosen format's `suffix` is appended to the command text sent to the bot (e.g.
+`/search acme-corp` with the JSON format sends `/search acme-corp --format=json`). Whether
+the bot honours that flag is up to the bot. Everything is configurable under `search:` in
+`config.yaml` — trigger commands, the formats offered, their suffixes and the default — with
+no code changes:
+
+```yaml
+search:
+  trigger_commands: ['/search', '/lookup', '/osint']
+  default_format: plain
+  formats:
+    - { id: json, label: JSON, suffix: ' --format=json', description: Machine-readable JSON }
+```
 
 ## Security notes
 

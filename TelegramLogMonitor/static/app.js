@@ -1,4 +1,4 @@
-// Dashboard for the Telegram Log Monitor API. All bot text is untrusted: render with textContent only.
+// Dashboard for the Darkweb OSINT Tool API. All bot text is untrusted: render with textContent only.
 (() => {
   const $ = (id) => document.getElementById(id);
   const KEY_STORE = "tlm.apiKey";
@@ -105,7 +105,7 @@
     a.remove();
   }
 
-  // Download button: saved files download straight away; others are fetched from Telegram first.
+  // Download button: saved files download straight away; others are fetched from the source first.
   function downloadButton(m) {
     const btn = el("button", "dl");
     btn.type = "button";
@@ -117,12 +117,12 @@
       return btn;
     }
     btn.textContent = m.has_file ? "Download" : "Fetch & download";
-    btn.title = m.has_file ? "Saved on the server" : "Not saved yet - will be pulled from Telegram";
+    btn.title = m.has_file ? "Saved on the server" : "Not saved yet - will be pulled from Darkweb";
     btn.addEventListener("click", async () => {
       if (m.has_file) return triggerDownload(m);
       btn.disabled = true;
       btn.classList.add("busy");
-      btn.textContent = "Fetching from Telegram…";
+      btn.textContent = "Fetching from Darkweb…";
       try {
         const updated = await api(`/api/messages/${m.id}/fetch`, { method: "POST" });
         Object.assign(m, updated);
@@ -141,7 +141,7 @@
   }
 
   function fileStatus(m) {
-    return `${fmtSize(m.media_size)} · ${m.has_file ? "saved" : "on Telegram"}`;
+    return `${fmtSize(m.media_size)} · ${m.has_file ? "saved" : "on Darkweb"}`;
   }
 
   function attachment(m) {
@@ -355,6 +355,69 @@
     });
   }
 
+  // ---------- search command: format selector + intelligence-sweep animation ----------
+  const SCAN_STEPS = [
+    "Establishing anonymised circuit (Tor relay 3/3)…",
+    "Querying darkweb index & paste dumps…",
+    "Correlating breach corpora and leak sets…",
+    "Extracting matching strings & indicators…",
+    "Scoring and de-duplicating results…",
+  ];
+
+  function searchConfig() {
+    return state.config.search || { trigger_commands: [], formats: [], default_format: "" };
+  }
+
+  // A command is a "search" if its first word matches a configured trigger command.
+  function isSearchCommand(text) {
+    const first = (text || "").trim().split(/\s+/)[0].toLowerCase();
+    return first ? searchConfig().trigger_commands.includes(first) : false;
+  }
+
+  function chosenFormat() {
+    return searchConfig().formats.find((f) => f.id === $("s-format").value) || null;
+  }
+
+  function updateFormatHint() {
+    const f = chosenFormat();
+    $("s-format-hint").textContent = f && f.description ? f.description : "";
+  }
+
+  // Show the format selector only while a search command is being typed.
+  function toggleSearchOpts() {
+    const show = searchConfig().formats.length > 0 && isSearchCommand($("s-text").value);
+    $("search-opts").hidden = !show;
+  }
+
+  let scanTimers = [];
+  function stopScan() {
+    scanTimers.forEach(clearTimeout);
+    scanTimers = [];
+    $("scan").hidden = true;
+  }
+
+  // Plays the cyber-intelligence sweep. Resolves when `work` settles (min ~2.4s so it is visible).
+  async function runScan(work) {
+    const steps = $("scan-steps");
+    steps.replaceChildren();
+    $("scan").hidden = false;
+    scanTimers.forEach(clearTimeout);
+    scanTimers = SCAN_STEPS.map((text, i) =>
+      setTimeout(() => {
+        const li = el("li", "scan-step", text);
+        requestAnimationFrame(() => li.classList.add("on"));
+        steps.append(li);
+      }, i * 480),
+    );
+    const minDelay = new Promise((r) => setTimeout(r, SCAN_STEPS.length * 480));
+    try {
+      const [result] = await Promise.all([work, minDelay]);
+      return result;
+    } finally {
+      stopScan();
+    }
+  }
+
   // ---------- setup ----------
   async function init() {
     const cfg = await api("/api/config");
@@ -368,6 +431,13 @@
       $("f-bot").append(new Option(b.label, b.username));
       $("s-bot").append(new Option(`${b.label} (@${b.username})`, b.username));
     }
+    const search = cfg.search || { formats: [], default_format: "" };
+    for (const f of search.formats) {
+      $("s-format").append(new Option(f.label, f.id, f.id === search.default_format, f.id === search.default_format));
+    }
+    updateFormatHint();
+    $("s-format").addEventListener("change", updateFormatHint);
+    $("s-text").addEventListener("input", toggleSearchOpts);
     for (const s of cfg.severities) {
       const chip = el("button", "chip");
       chip.type = "button";
@@ -401,15 +471,25 @@
       e.preventDefault();
       const input = $("s-text");
       const btn = e.submitter;
+      const search = isSearchCommand(input.value);
+      // For a search command, append the chosen format's suffix to the text sent to the bot.
+      let text = input.value;
+      if (search) {
+        const f = chosenFormat();
+        if (f && f.suffix) text += f.suffix;
+      }
       btn.disabled = true;
+      const send = api(`/api/bots/${encodeURIComponent($("s-bot").value)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
       try {
-        await api(`/api/bots/${encodeURIComponent($("s-bot").value)}/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: input.value }),
-        });
+        await (search ? runScan(send) : send);
         input.value = "";
+        toggleSearchOpts();
       } catch (err) {
+        stopScan();
         alert(`Send failed: ${err.message}`);
       } finally {
         btn.disabled = false;

@@ -56,6 +56,31 @@ retention:
   days: 90              # delete stored messages older than this; 0 = keep forever
   purge_interval_minutes: 60
 
+# Search command: when a command you send starts with one of `trigger_commands`,
+# the dashboard shows the "Choose strings format" selector and plays the intelligence
+# sweep animation. The chosen format's `suffix` is appended to the command text that is
+# sent to the bot (leave it blank for the bot's own default). Edit freely; no code changes.
+search:
+  trigger_commands: ['/search', '/lookup', '/osint']
+  default_format: plain
+  formats:
+    - id: plain
+      label: Plain text
+      suffix: ''
+      description: The bot's default output
+    - id: json
+      label: JSON
+      suffix: ' --format=json'
+      description: Machine-readable JSON
+    - id: csv
+      label: CSV
+      suffix: ' --format=csv'
+      description: Comma-separated values
+    - id: list
+      label: Line list
+      suffix: ' --format=list'
+      description: One string per line
+
 ui:
   page_size: 100
   refresh_stats_seconds: 30

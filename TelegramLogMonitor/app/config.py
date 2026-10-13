@@ -80,6 +80,7 @@ class Rules:
     media_preview_photos: bool
     retention_days: int
     purge_interval_minutes: int
+    search: dict = field(default_factory=dict)
     ui: dict = field(default_factory=dict)
 
     def bot(self, username: str) -> BotConfig | None:
@@ -97,6 +98,7 @@ class Rules:
                 "on_demand_max_bytes": self.media_on_demand_max_bytes,
                 "preview_photos": self.media_preview_photos,
             },
+            "search": self.search,
             "ui": self.ui,
         }
 
@@ -136,6 +138,25 @@ def load_rules(path: Path) -> Rules:
 
     media = raw.get("media", {})
     retention = raw.get("retention", {})
+
+    raw_search = raw.get("search") or {}
+    formats = [
+        {
+            "id": str(f["id"]),
+            "label": str(f.get("label") or f["id"]),
+            "suffix": str(f.get("suffix") or ""),
+            "description": str(f.get("description") or ""),
+        }
+        for f in raw_search.get("formats") or []
+    ]
+    search = {
+        "trigger_commands": [str(c).lower() for c in raw_search.get("trigger_commands") or ["/search"]],
+        "default_format": str(raw_search.get("default_format") or (formats[0]["id"] if formats else "")),
+        "formats": formats,
+    }
+    if formats and search["default_format"] not in {f["id"] for f in formats}:
+        raise ValueError(f"search.default_format '{search['default_format']}' is not a configured format")
+
     return Rules(
         bots=bots,
         default_severity=default,
@@ -147,5 +168,6 @@ def load_rules(path: Path) -> Rules:
         media_preview_photos=bool(media.get("preview_photos", True)),
         retention_days=int(retention.get("days", 0)),
         purge_interval_minutes=int(retention.get("purge_interval_minutes", 60)),
+        search=search,
         ui=dict(raw.get("ui") or {}),
     )

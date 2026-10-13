@@ -151,3 +151,25 @@ def test_on_demand_limit(tmp_path):
                            media_name="huge.pcap", media_size=10 * 1024 ** 3)
         r = c.post(f"/api/messages/{rec['id']}/fetch")
         assert r.status_code == 413 and "limit" in r.json()["detail"]
+
+
+def test_search_config_exposed(client):
+    cfg = client.get("/api/config", headers={"X-API-Key": "secret"}).json()
+    search = cfg["search"]
+    assert "/search" in search["trigger_commands"]
+    assert search["default_format"] in {f["id"] for f in search["formats"]}
+    assert {"id", "label", "suffix", "description"} <= set(search["formats"][0])
+
+
+def test_bad_default_format_rejected(tmp_path):
+    import yaml
+    from app.config import load_rules, BASE_DIR
+    raw = yaml.safe_load((BASE_DIR / "config.yaml").read_text())
+    raw["search"]["default_format"] = "nope"
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump(raw))
+    try:
+        load_rules(cfg)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "default_format" in str(e)
