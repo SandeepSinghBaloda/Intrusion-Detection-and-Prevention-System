@@ -263,7 +263,7 @@
     try {
       const s = await api("/api/status");
       const pill = $("collector-pill");
-      pill.textContent = `${s.mode} · ${s.connected ? "connected" : "disconnected"}`;
+      pill.textContent = `Server ${s.connected ? "connected" : "disconnected"}`;
       pill.className = "pill " + (s.connected ? "ok" : "bad");
       const problems = [s.error, ...Object.entries(s.bots || {})
         .filter(([, v]) => !v.ok).map(([k, v]) => `@${k}: ${v.error}`)].filter(Boolean);
@@ -425,7 +425,6 @@
     state.pageSize = cfg.ui.page_size || 100;
     for (const s of cfg.severities) state.sevColor[s.name] = s.color;
     for (const b of cfg.bots) state.botLabel[b.username] = b.label;
-    $("bots-sub").textContent = cfg.bots.map((b) => `@${b.username}`).join(" · ");
 
     for (const b of cfg.bots) {
       $("f-bot").append(new Option(b.label, b.username));

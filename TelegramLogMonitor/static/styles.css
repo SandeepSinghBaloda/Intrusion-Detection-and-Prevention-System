@@ -45,9 +45,26 @@ h2 { font-size: 14px; font-weight: 600; }
   padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 2;
 }
-.brand { display: flex; gap: 10px; align-items: center; }
-.logo { font-size: 24px; color: var(--accent); }
-.sub { margin: 0; color: var(--muted); font-size: 12px; }
+.brand { display: flex; gap: 12px; align-items: center; }
+
+/* Animated cyber-intelligence scanner logo */
+.logo { display: inline-flex; color: #16c784; }
+.scanner { display: block; }
+.scanner .ring { fill: none; stroke: currentColor; stroke-width: 1; opacity: .3; }
+.scanner .cross { stroke: currentColor; stroke-width: .6; opacity: .18; }
+.scanner .core { fill: currentColor; }
+.scanner .sweep { transform-origin: 24px 24px; animation: scanner-spin 2.4s linear infinite; }
+.scanner .blip {
+  fill: #5affb0; opacity: 0;
+  animation: scanner-blip 2.4s linear infinite;
+  filter: drop-shadow(0 0 2px #5affb0);
+}
+@keyframes scanner-spin { to { transform: rotate(360deg); } }
+@keyframes scanner-blip { 0%, 24% { opacity: 0; } 25% { opacity: 1; } 70% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .scanner .sweep { animation: none; }
+  .scanner .blip { opacity: .9; animation: none; }
+}
 .status { display: flex; gap: 8px; }
 .pill {
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
