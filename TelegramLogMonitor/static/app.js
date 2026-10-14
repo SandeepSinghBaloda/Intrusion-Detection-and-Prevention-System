@@ -507,7 +507,7 @@
 
     for (const b of cfg.bots) {
       $("f-bot").append(new Option(b.label, b.username));
-      $("s-bot").append(new Option(`${b.label} (@${b.username})`, b.username));
+      $("s-bot").append(new Option(b.label, b.username));
     }
     const search = cfg.search || { formats: [], default_format: "" };
     for (const f of search.formats) {
