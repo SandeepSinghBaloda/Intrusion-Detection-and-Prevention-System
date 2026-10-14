@@ -4,11 +4,11 @@
 
 bots:
   - username: perimeterlog_bot     # without the leading @
-    label: Perimeter Log
+    label: Server_1                # display name shown everywhere in the dashboard
     backfill_limit: 200            # messages pulled on first run (later runs resume from the last stored id)
     start_command: /start          # sent once by `python -m app.login` if you have never chatted with the bot
   - username: TTMlogsBot
-    label: TTM Logs
+    label: Server_2
     backfill_limit: 200
     start_command: /start
 
