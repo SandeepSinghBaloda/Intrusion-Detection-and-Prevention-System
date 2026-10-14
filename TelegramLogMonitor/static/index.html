@@ -82,7 +82,12 @@
     <section class="card">
       <div class="card-head"><h2>Send command to bot</h2></div>
       <form class="send" id="send-form">
-        <select id="s-bot" aria-label="Target bot"></select>
+        <div class="server-select">
+          <select id="s-bot" aria-label="Target bot"></select>
+          <span class="server-live" id="server-live" title="Server status">
+            <i class="led"></i><span class="txt">LIVE</span>
+          </span>
+        </div>
         <input id="s-text" placeholder="/search &lt;query&gt;, /status, /logs …" autocomplete="off" required maxlength="4096">
         <button type="submit">Send</button>
       </form>

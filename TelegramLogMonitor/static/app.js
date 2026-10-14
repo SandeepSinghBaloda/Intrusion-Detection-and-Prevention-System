@@ -303,6 +303,11 @@
       const pill = $("collector-pill");
       pill.textContent = `Server ${s.connected ? "connected" : "disconnected"}`;
       pill.className = "pill " + (s.connected ? "ok" : "bad");
+      const sl = $("server-live");
+      if (sl) {
+        sl.classList.toggle("offline", !s.connected);
+        sl.querySelector(".txt").textContent = s.connected ? "LIVE" : "OFFLINE";
+      }
       const problems = [s.error, ...Object.entries(s.bots || {})
         .filter(([, v]) => !v.ok).map(([k, v]) => `@${k}: ${v.error}`)].filter(Boolean);
       $("error-banner").hidden = !problems.length;
