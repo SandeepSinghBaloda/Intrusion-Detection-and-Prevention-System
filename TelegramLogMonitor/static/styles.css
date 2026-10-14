@@ -137,7 +137,10 @@ button.danger[disabled] { opacity: .5; cursor: not-allowed; }
 @keyframes flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } }
 .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .meta time { color: var(--muted); font-variant-numeric: tabular-nums; }
-.bot { font-weight: 600; }
+.bot { font-weight: 600; color: var(--accent); }        /* server name in blue */
+.bot-name { font-weight: 600; color: var(--accent); }   /* server name in file rows / KPI cards */
+#s-bot { color: var(--accent); font-weight: 600; }
+#s-bot option { color: var(--accent); }
 .sev { padding: 1px 8px; border-radius: 4px; color: #fff; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
 .text {
   margin: 4px 0 0; font: 13px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word;

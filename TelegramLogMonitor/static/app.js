@@ -168,10 +168,9 @@
     li.dataset.id = m.id;
     const info = el("div");
     const label = state.botLabel[m.bot] || m.bot;
-    info.append(
-      el("div", "name", m.media_name || "file"),
-      el("div", "detail", `${label} · ${fmtTime(m.date)} · ${fileStatus(m)}`),
-    );
+    const detail = el("div", "detail");
+    detail.append(el("span", "bot-name", label), ` · ${fmtTime(m.date)} · ${fileStatus(m)}`);
+    info.append(el("div", "name", m.media_name || "file"), detail);
     if (m.text) info.append(el("div", "caption", m.text));
     const actions = el("div", "row-actions");
     actions.append(downloadButton(m), deleteButton(m));
@@ -263,11 +262,11 @@
   function renderKpis(stats) {
     const k = $("kpis");
     k.replaceChildren();
-    const card = (label, value, hint, color) => {
+    const card = (label, value, hint, color, labelCls) => {
       const c = el("div", "kpi");
       const l = el("div", "label");
       if (color) { const s = el("span", "swatch"); s.style.background = color; l.append(s); }
-      l.append(label);
+      l.append(labelCls ? el("span", labelCls, label) : label);
       c.append(l, el("div", "value", Number(value).toLocaleString()));
       if (hint) c.append(el("div", "hint", hint));
       k.append(c);
@@ -281,7 +280,7 @@
     }
     for (const b of state.config.bots) {
       const info = stats.by_bot[b.username] || { total: 0, last_message_at: null };
-      card(b.label, info.total, `last message ${ago(info.last_message_at)}`);
+      card(b.label, info.total, `last message ${ago(info.last_message_at)}`, null, "bot-name");
     }
 
     const bars = $("bars");
