@@ -77,6 +77,26 @@ h2 { font-size: 14px; font-weight: 600; }
 .pill.bad .dot { background: var(--bad); }
 @keyframes pulse { 50% { opacity: .35; } }
 
+/* Blinking server-health badge */
+.pill.health { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); font-weight: 600; }
+.pill.health .hb {
+  width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 6px currentColor; animation: health-beat 1.2s ease-in-out infinite;
+}
+.pill.health .txt { animation: health-blink 1.5s steps(1, end) infinite; }
+.pill.health.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--border)); }
+@keyframes health-beat {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(1.55); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.4); }
+  60% { transform: scale(1); }
+}
+@keyframes health-blink { 0%, 72% { opacity: 1; } 73%, 100% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) {
+  .pill.health .hb, .pill.health .txt { animation: none; }
+}
+
 .banner {
   margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px;
   border: 1px solid var(--bad); color: var(--bad); background: var(--panel);

@@ -307,6 +307,11 @@
         sl.classList.toggle("offline", !s.connected);
         sl.querySelector(".txt").textContent = s.connected ? "LIVE" : "OFFLINE";
       }
+      const hp = $("health-pill");
+      if (hp) {
+        hp.classList.toggle("bad", !s.connected);
+        hp.querySelector(".txt").textContent = s.connected ? "Healthy" : "Unhealthy";
+      }
       const problems = [s.error, ...Object.entries(s.bots || {})
         .filter(([, v]) => !v.ok).map(([k, v]) => `@${k}: ${v.error}`)].filter(Boolean);
       $("error-banner").hidden = !problems.length;
