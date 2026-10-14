@@ -19,7 +19,7 @@ from telethon.tl.custom.message import Message
 from .config import BotConfig, Rules, Settings
 from .db import Store
 from .hub import Hub
-from .parser import classify, extract
+from .parser import classify, extract, sanitize
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +76,8 @@ class BaseCollector:
                media_name: str | None = None, media_path: str | None = None,
                media_size: int | None = None, media_mime: str | None = None) -> dict:
         # Only the bot's own messages are classified; commands we send are stored as 'info'.
+        if not outgoing:
+            text = sanitize(text, self.rules)  # strip hidden lines before storing/showing
         severity = self.rules.default_severity if outgoing else classify(text, self.rules)
         record = self.store.upsert(
             bot=bot, tg_message_id=tg_message_id, date=date, text=text, severity=severity,

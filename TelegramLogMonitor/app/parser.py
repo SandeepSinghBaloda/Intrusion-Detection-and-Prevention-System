@@ -4,6 +4,15 @@ from __future__ import annotations
 from .config import Rules
 
 
+def sanitize(text: str, rules: Rules) -> str:
+    """Drops any line matching a configured `hide_lines` pattern (e.g. upsell/advert lines)."""
+    if not text or not rules.hide_lines:
+        return text
+    kept = [line for line in text.splitlines()
+            if not any(p.search(line) for p in rules.hide_lines)]
+    return "\n".join(kept).strip("\n")
+
+
 def classify(text: str, rules: Rules) -> str:
     for level in rules.levels:  # highest rank first
         if any(p.search(text) for p in level.patterns):

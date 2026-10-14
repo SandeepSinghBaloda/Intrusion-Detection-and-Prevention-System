@@ -80,6 +80,7 @@ class Rules:
     media_preview_photos: bool
     retention_days: int
     purge_interval_minutes: int
+    hide_lines: tuple[re.Pattern, ...] = ()    # lines matching any of these are stripped from messages
     search: dict = field(default_factory=dict)
     ui: dict = field(default_factory=dict)
 
@@ -177,6 +178,7 @@ def load_rules(path: Path) -> Rules:
         media_preview_photos=bool(media.get("preview_photos", True)),
         retention_days=int(retention.get("days", 0)),
         purge_interval_minutes=int(retention.get("purge_interval_minutes", 60)),
+        hide_lines=tuple(re.compile(p, re.IGNORECASE) for p in (raw.get("hide_lines") or [])),
         search=search,
         ui=dict(raw.get("ui") or {}),
     )

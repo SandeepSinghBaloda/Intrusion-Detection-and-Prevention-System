@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import BASE_DIR, load_rules, load_settings
 from app.db import Store
-from app.parser import classify, extract
+from app.parser import classify, extract, sanitize
 
 RULES = load_rules(BASE_DIR / "config.yaml")
 
@@ -28,6 +28,32 @@ def test_extract():
     assert found["port"] == ["3389"]
     assert found["cve"] == ["CVE-2024-3400"]
     assert found["domain"] == ["evil.com"]
+
+
+def test_sanitize_hides_configured_lines():
+    msg = "Found 5 830 uniq strings for courses.\n🔒 Free version shows: 2 915\n💎 Premium shows 100%"
+    assert sanitize(msg, RULES) == "Found 5 830 uniq strings for courses."
+    # no hide_lines configured -> text unchanged
+    from dataclasses import replace
+    assert sanitize(msg, replace(RULES, hide_lines=())) == msg
+
+
+def test_incoming_messages_are_sanitized_before_storage(tmp_path):
+    from app.main import create_app
+    settings = replace(load_settings(), demo_mode=True, api_key=None,
+                       db_path=tmp_path / "m.db", media_dir=tmp_path / "media")
+    app = create_app(settings)
+    with TestClient(app):
+        rec = app.state.collector.ingest(
+            bot="perimeterlog_bot", tg_message_id=123456, date="2026-01-01T00:00:00+00:00",
+            text="Found 10 strings for courses.\n🔒 Free version shows: 5\n💎 Premium shows 100%",
+            outgoing=False)
+        assert rec["text"] == "Found 10 strings for courses."
+        # a command we send is never altered
+        out = app.state.collector.ingest(
+            bot="perimeterlog_bot", tg_message_id=123457, date="2026-01-01T00:00:01+00:00",
+            text="/search premium shows", outgoing=True)
+        assert out["text"] == "/search premium shows"
 
 
 def test_store_upsert_is_idempotent_and_updates_edits(tmp_path):

@@ -106,6 +106,20 @@ All endpoints except `/api/health` require `X-API-Key` (or `?key=`) when `APP_AP
 | POST | `/api/messages/delete` | Bulk delete by filter: `{bot, severity, q, media_only, older_than_days}` — returns `{deleted}` |
 | GET | `/api/config`, `/api/status`, `/api/health` | Dashboard metadata, collector state, liveness |
 
+## Hiding lines in messages
+
+To drop unwanted lines from bot messages (for example upsell/advert lines), list
+case-insensitive patterns under `hide_lines` in `config.yaml`. Any line matching one is
+removed before the message is stored or shown — it never reaches the database, the feed, or
+search. Existing stored messages are not re-filtered; only messages received after the change
+are affected.
+
+```yaml
+hide_lines:
+  - 'free version shows'
+  - 'premium shows'
+```
+
 ## Removing messages and files
 
 Besides the automatic `retention.days` cleanup, you can delete on demand from the dashboard:

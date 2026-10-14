@@ -46,6 +46,12 @@ extractors:
   port: '\bport[:=\s]+(\d{1,5})\b'
   domain: '\b((?:[a-z0-9-]+\.)+(?:com|net|org|io|in|gov|edu|co|info|biz|xyz))\b'
 
+# Any line in a bot message that matches one of these (case-insensitive regex) is
+# removed before the message is stored or shown. Use it to hide upsell/advert lines.
+hide_lines:
+  - 'free version shows'
+  - 'premium shows'
+
 media:
   download: true          # auto-save files/photos as they arrive
   max_size_mb: 20         # auto-save limit; bigger files are fetched from Telegram when you click Download
