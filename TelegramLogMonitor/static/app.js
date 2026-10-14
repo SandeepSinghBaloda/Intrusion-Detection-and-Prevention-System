@@ -310,7 +310,7 @@
       const hp = $("health-pill");
       if (hp) {
         hp.classList.toggle("bad", !s.connected);
-        hp.querySelector(".txt").textContent = s.connected ? "Healthy" : "Unhealthy";
+        hp.querySelector(".txt").textContent = s.connected ? "Server Status : Healthy" : "Server Status : Unhealthy";
       }
       const problems = [s.error, ...Object.entries(s.bots || {})
         .filter(([, v]) => !v.ok).map(([k, v]) => `@${k}: ${v.error}`)].filter(Boolean);
