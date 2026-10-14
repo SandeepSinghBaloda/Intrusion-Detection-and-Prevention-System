@@ -72,6 +72,15 @@ h2 { font-size: 14px; font-weight: 600; }
 }
 .pill.ok { color: var(--ok); }
 .pill.bad { color: var(--bad); }
+/* "Server connected" — bright blue with a gentle blink */
+#collector-pill.ok {
+  color: #3ea6ff; font-weight: 600;
+  border-color: color-mix(in srgb, #3ea6ff 55%, var(--border));
+  text-shadow: 0 0 7px rgba(62, 166, 255, .55);
+  animation: server-blink 1.7s ease-in-out infinite;
+}
+@keyframes server-blink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { #collector-pill.ok { animation: none; } }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .pill.ok .dot { background: var(--ok); animation: pulse 2s infinite; }
 .pill.bad .dot { background: var(--bad); }
